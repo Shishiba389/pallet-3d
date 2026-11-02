@@ -4,119 +4,185 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pallet 3D</title>
+<script>
+  // Same theme as A.N.T (it stores the choice in localStorage 'ant-theme'); framed inside A.N.T the tool drops its own mark.
+  try { document.documentElement.dataset.theme = localStorage.getItem('ant-theme') === 'dark' ? 'dark' : 'light'; } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  if (self !== top) document.documentElement.classList.add('embedded');
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* A.N.T's Omni tokens: a light grey ground, white cards with 20px corners and no border or shadow,
+     pills for every control, ink for the chrome and one orange for the data that limits the load. */
   :root {
-    --ground: #f6f6f3; --surface: #fff; --well: #eeefec; --active: #e9eae6;
-    --border: #e6e7e3; --control: #cdced1;
-    --text: #131416; --muted: #5d5f60;
-    --accent: #1b6c80; --positive: #1e7b4f; --negative: #c4242a;
-    --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
+    color-scheme: light;
+    --bg: #f2f2f2; --surface: #fff; --surface-2: #f4f4f4; --surface-3: #e9e9e9; --well: #ededed;
+    --line: #e6e6e6; --line-strong: #d2d2d2;
+    --text: #1a1a1a; --text-2: #3b3b3b; --text-3: #6e6e6e;
+    --ink-dark: #262626; --on-dark: #f5f5f5;
+    --primary: #ff5f2e; --primary-ink: #d9480f; --negative: #d92f32;
+    --pill-positive-bg: #e3f6e8; --pill-positive-ink: #0f5a29;
     --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
-    --pill-neutral-bg: #ebedee; --pill-neutral-ink: #353736;
-    --radius-card: 8px; --radius-control: 6px; --radius-sheet: 16px;
-    --gap: 24px;
+    --grid-major: #cfcfcf; --grid-minor: #dddddd; --edge: #6b5330;
+    --radius-card: 20px; --radius-well: 16px;
+    --gap: 12px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f0f10; --surface: #1b1b1c; --surface-2: #242425; --surface-3: #2f2f30; --well: #121213;
+    --line: #2c2c2d; --line-strong: #404042;
+    --text: #f2f2f2; --text-2: #d0d0d0; --text-3: #9c9c9c;
+    --ink-dark: #f2f2f2; --on-dark: #1a1a1a;
+    --primary-ink: #ff7a50; --negative: #ff6b6b;
+    --pill-positive-bg: #12301f; --pill-positive-ink: #8ee0b2;
+    --pill-negative-bg: #3a1a1b; --pill-negative-ink: #ffb3ae;
+    --grid-major: #2e2e30; --grid-minor: #222224; --edge: #3d2f1b;
   }
   * { box-sizing: border-box }
   [hidden] { display: none !important }
-  body { margin: 0; height: 100vh; display: grid; grid-template: 48px 1fr / 288px 1fr;
-         font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif; color: var(--text); background: var(--ground) }
-  button, input, select { font: inherit; color: inherit }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+  /* grid: 12 | form 300 | 12 | sheet 1fr | 12 = the window */
+  body { margin: 0; height: 100vh; display: grid; grid-template: 52px minmax(0, 1fr) / 300px minmax(0, 1fr); gap: 0 var(--gap); padding: 0 var(--gap) var(--gap);
+         font: 14px/1.5 "Inter Tight", system-ui, sans-serif; letter-spacing: -.005em; color: var(--text); background: var(--bg) }
+  button, input, select { font: inherit; color: inherit; letter-spacing: inherit }
+  :focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px }
+  ::selection { background: var(--primary); color: #1a1a1a }
   .num { font-variant-numeric: tabular-nums }
-  .dim { color: var(--muted) }
+  .dim { color: var(--text-3) }
 
-  /* frame: top bar + inputs on the tinted ground, no rule between them */
-  .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 16px }
+  /* title row on the ground: the plan's name, its state, and the way back to the computed plan */
+  .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px }
   .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text); text-decoration: none }
-  .top .sep { width: 1px; height: 20px; background: var(--control) }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 }
-  .pill { flex: none; white-space: nowrap; font-size: 12px; font-weight: 500; line-height: 20px; padding: 0 8px; border-radius: 999px;
-          background: var(--pill-neutral-bg); color: var(--pill-neutral-ink) }
+  .top .sep { width: 1px; height: 20px; background: var(--line-strong) }
+  .embedded .brand, .embedded .top .sep { display: none }
+  h1 { font-size: 20px; line-height: 1.2; font-weight: 600; letter-spacing: -.015em; margin: 0; white-space: nowrap }
+  .pill { flex: none; white-space: nowrap; font-size: 12px; font-weight: 500; line-height: 22px; padding: 0 10px; border-radius: 999px;
+          background: var(--surface-3); color: var(--text-2) }
   .pill.pos { background: var(--pill-positive-bg); color: var(--pill-positive-ink) }
   .pill.neg { background: var(--pill-negative-bg); color: var(--pill-negative-ink) }
   .grow { flex: 1 }
-  .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--control);
-         border-radius: var(--radius-control); background: var(--surface); cursor: pointer; transition: background-color .12s }
-  .btn:hover { background: var(--active) }
+  .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 18px; border: 1px solid var(--line-strong); border-radius: 999px;
+         background: var(--surface); font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color .15s, transform .15s }
+  .btn:hover { background: var(--surface-2) }
+  .btn:active { transform: scale(.98) }
 
-  aside { display: flex; flex-direction: column; overflow: auto; padding: 8px 16px 24px }
+  /* the form: one white card, sections split by space, labels above their fields */
+  aside { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding: 20px; background: var(--surface); border-radius: var(--radius-card) }
   aside section + section, aside details { margin-top: 28px }
-  h2, summary { font-size: 14px; font-weight: 600; margin: 0 0 12px }
-  summary { cursor: pointer; width: max-content }
-  .fields { display: grid; gap: 12px }
+  h2, summary { font-size: 16px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 14px }
+  summary { cursor: pointer; width: max-content; list-style: none; display: flex; align-items: center; gap: 8px }
+  summary::-webkit-details-marker { display: none }
+  summary svg { transition: transform .15s }
+  details[open] summary svg { transform: rotate(90deg) }
+  .fields { display: grid; gap: 14px }
   .row2, .row3 { display: grid; gap: 8px; grid-template-columns: 1fr 1fr }
   .row3 { grid-template-columns: 1fr 1fr 1fr }
-  label { display: block; font-size: 13px; font-weight: 500 }
-  label i { font-style: normal; font-weight: 400; color: var(--muted) }
-  input[type=number], select { display: block; width: 100%; height: 34px; margin-top: 6px; padding: 0 10px; border: 1px solid var(--control); border-radius: var(--radius-control);
-         background: var(--surface); font-size: 14px; font-variant-numeric: tabular-nums }
-  [aria-invalid=true] { border-color: var(--negative) }
-  label.check { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 400; cursor: pointer }
-  input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(--text) }
-  .hint { font-size: 12px; color: var(--muted); margin: 0 }
-  .err { font-size: 13px; color: var(--negative); margin: 0 }
+  label { display: block; font-size: 14px; font-weight: 500; color: var(--text) }
+  label i { font-style: normal; font-weight: 400; color: var(--text-3) }
+  input[type=number], select { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 0 16px; border: 1px solid transparent; border-radius: 999px;
+         background: var(--surface-2); font-size: 15px; font-variant-numeric: tabular-nums; outline: none; transition: border-color .15s, background-color .15s }
+  input[type=number] { padding: 0 14px; -moz-appearance: textfield; appearance: textfield }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0 }
+  input[type=number]:hover, select:hover { background: var(--surface-3) }
+  input[type=number]:focus, select:focus { border-color: var(--line-strong); background: var(--surface) }
+  select { appearance: none; padding-right: 40px; cursor: pointer;
+           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236e6e6e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+           background-repeat: no-repeat; background-position: right 16px center }
+  :root[data-theme="dark"] select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b4b4b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") }
+  [aria-invalid=true] { border-color: var(--negative) !important }
+  label.check { display: flex; align-items: center; gap: 10px; min-height: 32px; font-weight: 400; color: var(--text-2); cursor: pointer }
+  input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--ink-dark) }
+  .hint { font-size: 12px; color: var(--text-3); margin: 0 }
+  .err { font-size: 13px; font-weight: 500; color: var(--negative); margin: 0 }
   .err:empty { display: none }
-  .stale { opacity: .45; pointer-events: none; transition: opacity .12s }
+  .stale { opacity: .45; pointer-events: none; transition: opacity .15s }
   .keys { margin-top: auto; padding-top: 28px }
   .keys dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 12px; align-items: center; margin: 0; font-size: 13px }
   .keys dt { font-weight: 500 }
-  .keys dd { margin: 0; color: var(--muted) }
-  kbd { display: inline-block; min-width: 28px; padding: 0 6px; font: inherit; font-size: 12px; line-height: 20px; text-align: center;
-        border: 1px solid var(--control); border-radius: 4px; background: var(--surface) }
+  .keys dd { margin: 0; color: var(--text-3) }
+  kbd { display: inline-block; min-width: 30px; padding: 0 8px; font: inherit; font-size: 12px; font-weight: 500; line-height: 22px; text-align: center;
+        border-radius: 999px; background: var(--surface-2) }
 
-  /* the sheet: result first, then the 3D work */
-  .sheet { display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0 8px 8px 0; padding: var(--gap);
-           background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sheet) }
-  .strip { display: grid; grid-template-columns: repeat(4, 1fr) }
-  .strip > div { display: grid; gap: 4px; align-content: start; padding: 0 24px; border-left: 1px solid var(--border) }
+  /* the sheet: the answer first, then the 3D work */
+  .sheet { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 20px; background: var(--surface); border-radius: var(--radius-card) }
+  .strip { display: grid; grid-template-columns: 1.15fr 1fr 1fr .8fr 1.3fr }
+  .strip > div { display: grid; gap: 4px; align-content: start; min-width: 0; padding: 0 20px; border-left: 1px solid var(--line) }
   .strip > div:first-child { padding-left: 0; border-left: 0 }
-  .lbl { font-size: 12px; font-weight: 500; color: var(--muted) }
-  .val { font-size: 20px; line-height: 32px; font-variant-numeric: tabular-nums }
-  .val.lead { font-size: 28px }
-  .val small { font-size: 13px; color: var(--muted) }
-  .sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
-  .bar { height: 4px; margin: 4px 0 2px; border-radius: 99px; background: var(--active); overflow: hidden }
-  .bar i { display: block; height: 100%; background: var(--muted) }
-  .bar i.lim { background: var(--accent) }
+  .lbl { font-size: 13px; font-weight: 500; color: var(--text-3) }
+  .val { font-size: 24px; line-height: 36px; font-weight: 400; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap }
+  .val.lead { font-size: 36px; line-height: 40px; letter-spacing: -.03em }
+  .val small { font-size: 14px; letter-spacing: 0; color: var(--text-3) }
+  .sub { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums }
+  .bar { height: 6px; margin: 4px 0 2px; border-radius: 999px; background: var(--surface-3); overflow: hidden }
+  .bar i { display: block; height: 100%; border-radius: inherit; background: var(--text-2) }
+  .bar i.lim { background: var(--primary) }
   .bar i.over { background: var(--negative) }
-  .notes { display: grid; gap: 6px; margin: 20px 0 16px }
+  /* the layer plan: one layer from above, and the next one when layers are interlocked */
+  .plan { display: flex; gap: 12px; align-items: flex-end }
+  .plan figure { margin: 0; display: grid; gap: 4px }
+  .plan svg { display: block; height: 58px; width: auto; max-width: 100% }
+  .plan figcaption { font-size: 12px; color: var(--text-3); white-space: nowrap }
+  .plan figcaption span::before { content: " · " }
+  .plan .deck { fill: var(--surface-3) }
+  .plan .c { stroke: var(--surface); stroke-width: 2px; vector-effect: non-scaling-stroke }
+  .notes { display: grid; gap: 6px; margin: 18px 0 16px }
   .notes p { margin: 0 }
-  #checks { font-size: 13px; line-height: 1.7; color: var(--muted) }
-  #checks svg { color: var(--positive); vertical-align: -3px; margin-right: 6px }
-  #checks .neg { color: var(--negative); font-weight: 500; margin-right: 4px }
-  .chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; margin-right: 6px; padding: 0 10px; border: 1px solid var(--control);
-          border-radius: 999px; background: var(--surface); font-size: 13px; cursor: pointer; white-space: nowrap; transition: background-color .12s }
-  .chip:hover { background: var(--active) }
-  .chip i { width: 10px; height: 10px; border-radius: 2px }
+  #finding { font-size: 16px; color: var(--text) }
+  #checks { font-size: 13px; line-height: 1.7; color: var(--text-3) }
+  #checks svg { color: var(--pill-positive-ink); vertical-align: -3px; margin-right: 6px }
+  :root[data-theme="dark"] #checks svg { color: #4cc777 }
+  #checks .neg { color: var(--negative); font-weight: 500; margin-right: 6px }
+  .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; margin-right: 6px; padding: 0 12px; border: 0;
+          border-radius: 999px; background: var(--surface-2); font-size: 13px; cursor: pointer; white-space: nowrap; transition: background-color .15s }
+  .chip:hover { background: var(--surface-3) }
+  .chip i { width: 10px; height: 10px; border-radius: 3px }
 
-  .canvas { position: relative; flex: 1; min-height: 0; border-radius: var(--radius-card); overflow: hidden; background: var(--well) }
+  .canvas { position: relative; flex: 1; min-height: 0; border-radius: var(--radius-well); overflow: hidden; background: var(--well); container-type: inline-size }
+  /* the edit bar keeps one line: the size goes first, then the words beside the icons */
+  @container (max-width: 600px) { #seldims, #tools .sep { display: none } }
+  @container (max-width: 440px) { #tools .tool span { display: none } }
   .canvas canvas { display: block }
+  /* controls pinned inside the well's corners: flat white pills */
   .ov { position: absolute; display: flex; align-items: center; gap: 2px; padding: 4px; background: var(--surface);
-        border: 1px solid var(--border); border-radius: var(--radius-card); font-size: 13px }
-  #tools { top: 12px; left: 12px; max-width: calc(100% - 24px); flex-wrap: wrap }
-  #tools > span, #tools > b { padding: 0 8px }
-  #tools .sep { width: 1px; height: 20px; padding: 0; margin: 0 4px; background: var(--border) }
-  .tool { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-control);
-          background: transparent; cursor: pointer; transition: background-color .12s }
-  .tool:hover, .tool[aria-pressed=true] { background: var(--active) }
+        border-radius: 999px; font-size: 13px }
+  #tools { top: 12px; left: 12px; max-width: calc(100% - 24px); flex-wrap: wrap; border-radius: 22px }
+  #tools > span, #tools > b { padding: 0 10px }
+  #tools > b { font-weight: 600 }
+  #tools .sep { width: 1px; height: 20px; padding: 0; margin: 0 4px; background: var(--line) }
+  .tool { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: 999px;
+          background: transparent; cursor: pointer; transition: background-color .15s, color .15s }
+  .tool:hover { background: var(--surface-3) }
+  .tool[aria-pressed=true] { background: var(--ink-dark); color: var(--on-dark) }
   .tool svg { flex: none }
   #views { bottom: 12px; left: 12px }
-  #layers { bottom: 12px; right: 12px; gap: 8px; padding: 4px 12px }
-  #layers input { width: 110px; accent-color: var(--accent) }
+  #layers { bottom: 12px; right: 12px; gap: 10px; padding: 4px 16px; min-height: 44px }
+  #layers input { width: 120px; accent-color: var(--ink-dark) }
 
+  @media (max-width: 1180px) {
+    .strip { grid-template-columns: repeat(3, 1fr); row-gap: 16px }
+    .strip > div:nth-child(4) { padding-left: 0; border-left: 0 }
+    .strip > .plan-cell { grid-column: span 2 }
+  }
   @media (max-width: 860px) {
-    body { height: auto; grid-template: 48px auto auto / 1fr }
-    .sheet { order: 1 } aside { order: 2; padding-top: 24px } /* the answer first, inputs under it */
-    .sheet { margin: 0; padding: 16px; border-radius: 0; border-width: 1px 0 }
+    body { height: auto; grid-template: 52px auto auto / minmax(0, 1fr); gap: var(--gap) 0 }
+    .sheet { order: 1 } aside { order: 2 } /* the answer first, the inputs under it */
+    .sheet { padding: 16px }
     .canvas { flex: none; height: 62vh; min-height: 360px }
     .strip { grid-template-columns: 1fr 1fr; gap: 16px 0 }
-    .strip > div:nth-child(3) { padding-left: 0; border-left: 0 }
+    .strip > div:first-child { grid-column: 1 / -1 }
+    .strip > div:nth-child(2), .strip > div:nth-child(4) { padding-left: 0; border-left: 0 }
+    .strip > .plan-cell { grid-column: auto } /* beside Lấp đầy, no orphan */
     .top .brand span { display: none }
+    h1 { font-size: 18px }
     #layers input { width: 72px }
   }
-  @media (pointer: coarse) { .tool, .btn, .chip, input[type=number], select { min-height: 44px } .keys { display: none } }
+  @media (max-width: 520px) {
+    #views { bottom: 64px } /* the view switch and the layer slider no longer fit side by side */
+    .plan svg { height: 44px }
+    .plan figcaption span { display: block }
+    .plan figcaption span::before { content: none }
+  }
+  @media (pointer: coarse) { .tool, .btn, .chip { min-height: 44px } .keys { display: none } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important } }
 </style>
 <script type="importmap">
 { "imports": {
@@ -132,92 +198,93 @@
     <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
       <rect x="2" y="13" width="8" height="5" fill="#c9a26b"/><rect x="11" y="13" width="9" height="5" fill="#dcbd8c"/>
       <rect x="2" y="7" width="9" height="5" fill="#dcbd8c"/><rect x="12" y="7" width="8" height="5" fill="#c9a26b"/>
-      <rect x="1" y="19" width="20" height="2" fill="#1b6c80"/>
+      <rect x="1" y="19" width="20" height="2" fill="#ff5f2e"/>
     </svg>
     <span>Pallet 3D</span>
   </a>
   <span class="sep"></span>
-  <h1>Phương án xếp hàng</h1>
+  <h1 data-i18n="title">Phương án xếp hàng</h1>
   <span id="pill" class="pill"></span>
   <span class="grow"></span>
   <button id="reset" class="btn" hidden>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-    Khôi phục phương án
+    <span data-i18n="reset">Khôi phục phương án</span>
   </button>
 </header>
 
 <aside>
   <form id="spec">
     <section class="fields">
-      <h2>Thùng carton</h2>
+      <h2 data-i18n="carton">Thùng carton</h2>
       <div class="row3">
-        <label>Dài <i>mm</i><input name="l" type="number" inputmode="numeric" min="1" value="400" required></label>
-        <label>Rộng <i>mm</i><input name="w" type="number" inputmode="numeric" min="1" value="300" required></label>
-        <label>Cao <i>mm</i><input name="h" type="number" inputmode="numeric" min="1" value="250" required></label>
+        <label><span data-i18n="len">Dài</span> <i>mm</i><input name="l" type="number" inputmode="numeric" min="1" value="400" required></label>
+        <label><span data-i18n="wid">Rộng</span> <i>mm</i><input name="w" type="number" inputmode="numeric" min="1" value="300" required></label>
+        <label><span data-i18n="hei">Cao</span> <i>mm</i><input name="h" type="number" inputmode="numeric" min="1" value="250" required></label>
       </div>
-      <label>Khối lượng <i>kg</i><input name="kg" type="number" inputmode="decimal" min="0" step="any" value="12" required></label>
-      <label class="check"><input name="allowTip" type="checkbox"> Cho phép đặt nằm</label>
+      <label><span data-i18n="weight">Khối lượng</span> <i>kg</i><input name="kg" type="number" inputmode="decimal" min="0" step="any" value="12" required></label>
+      <label class="check"><input name="allowTip" type="checkbox"> <span data-i18n="allowTip">Cho phép đặt nằm</span></label>
     </section>
 
     <section class="fields">
-      <h2>Pallet</h2>
-      <label>Loại pallet
+      <h2 data-i18n="pallet">Pallet</h2>
+      <label><span data-i18n="palletType">Loại pallet</span>
         <select id="preset">
           <option value="1200x800">EUR 1200 × 800</option>
           <option value="1200x1000" selected>1200 × 1000</option>
           <option value="1100x1100">1100 × 1100</option>
-          <option value="custom">Tùy chỉnh</option>
+          <option value="custom" data-i18n="custom">Tùy chỉnh</option>
         </select>
       </label>
       <div class="row2" id="custom" hidden>
-        <label>Dài <i>mm</i><input name="L" type="number" inputmode="numeric" min="1" value="1200" required></label>
-        <label>Rộng <i>mm</i><input name="W" type="number" inputmode="numeric" min="1" value="1000" required></label>
+        <label><span data-i18n="len">Dài</span> <i>mm</i><input name="L" type="number" inputmode="numeric" min="1" value="1200" required></label>
+        <label><span data-i18n="wid">Rộng</span> <i>mm</i><input name="W" type="number" inputmode="numeric" min="1" value="1000" required></label>
       </div>
       <div class="row2">
-        <label>Cao tối đa <i>mm</i><input name="maxH" type="number" inputmode="numeric" min="1" value="1800" required aria-describedby="limits-hint"></label>
-        <label>Tải tối đa <i>kg</i><input name="maxKg" type="number" inputmode="decimal" min="0" step="any" value="1000" required aria-describedby="limits-hint"></label>
+        <label><span data-i18n="maxH">Cao tối đa</span> <i>mm</i><input name="maxH" type="number" inputmode="numeric" min="1" value="1800" required aria-describedby="limits-hint"></label>
+        <label><span data-i18n="maxKg">Tải tối đa</span> <i>kg</i><input name="maxKg" type="number" inputmode="decimal" min="0" step="any" value="1000" required aria-describedby="limits-hint"></label>
       </div>
-      <p class="hint" id="limits-hint">Chiều cao tính cả pallet. Tải 0 là không giới hạn.</p>
+      <p class="hint" id="limits-hint" data-i18n="limitsHint">Chiều cao tính cả pallet. Tải 0 là không giới hạn.</p>
     </section>
 
     <details>
-      <summary>Nâng cao</summary>
+      <summary><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><span data-i18n="advanced">Nâng cao</span></summary>
       <div class="fields">
         <div class="row2">
-          <label>Cao pallet <i>mm</i><input name="palletH" type="number" inputmode="numeric" min="0" value="144" required></label>
-          <label>Tràn mép <i>mm</i><input name="overhang" type="number" inputmode="numeric" min="0" value="0" required></label>
+          <label><span data-i18n="palletH">Cao pallet</span> <i>mm</i><input name="palletH" type="number" inputmode="numeric" min="0" value="144" required></label>
+          <label><span data-i18n="overhang">Tràn mép</span> <i>mm</i><input name="overhang" type="number" inputmode="numeric" min="0" value="0" required></label>
         </div>
-        <label>Diện tích đỡ tối thiểu <i>%</i><input name="minSupport" type="number" inputmode="numeric" min="0" max="100" value="80" required></label>
-        <label class="check"><input name="interlock" type="checkbox" checked> Xếp xen kẽ lớp</label>
-        <label class="check"><input id="gravity" type="checkbox" checked> Thùng tự rơi khi thả</label>
-        <label class="check"><input id="snap" type="checkbox" checked> Bắt lưới 10 mm khi kéo</label>
+        <label><span data-i18n="minSupport">Diện tích đỡ tối thiểu</span> <i>%</i><input name="minSupport" type="number" inputmode="numeric" min="0" max="100" value="80" required></label>
+        <label class="check"><input name="interlock" type="checkbox" checked> <span data-i18n="interlock">Xếp xen kẽ lớp</span></label>
+        <label class="check"><input id="gravity" type="checkbox" checked> <span data-i18n="gravity">Thùng tự rơi khi thả</span></label>
+        <label class="check"><input id="snap" type="checkbox" checked> <span data-i18n="snap">Bắt lưới 10 mm khi kéo</span></label>
       </div>
     </details>
     <p class="err" id="err" role="alert"></p>
   </form>
 
   <section class="keys">
-    <h2>Phím tắt</h2>
+    <h2 data-i18n="keys">Phím tắt</h2>
     <dl>
-      <dt><kbd>R</kbd></dt><dd>Xoay thùng đang chọn</dd>
-      <dt><kbd>T</kbd></dt><dd>Lật thùng</dd>
-      <dt><kbd>G</kbd></dt><dd>Thả xuống mặt đỡ</dd>
-      <dt><kbd>N</kbd></dt><dd>Thêm thùng</dd>
-      <dt><kbd>Del</kbd></dt><dd>Xóa thùng</dd>
-      <dt><kbd>Esc</kbd></dt><dd>Bỏ chọn</dd>
-      <dt>Kéo chuột</dt><dd>Xoay góc nhìn</dd>
-      <dt>Chuột phải</dt><dd>Dời góc nhìn</dd>
-      <dt>Con lăn</dt><dd>Phóng to, thu nhỏ</dd>
+      <dt><kbd>R</kbd></dt><dd data-i18n="kRotate">Xoay thùng đang chọn</dd>
+      <dt><kbd>T</kbd></dt><dd data-i18n="kTip">Lật thùng</dd>
+      <dt><kbd>G</kbd></dt><dd data-i18n="kDrop">Thả xuống mặt đỡ</dd>
+      <dt><kbd>N</kbd></dt><dd data-i18n="kAdd">Thêm thùng</dd>
+      <dt><kbd>Del</kbd></dt><dd data-i18n="kDel">Xóa thùng</dd>
+      <dt><kbd>Esc</kbd></dt><dd data-i18n="kEsc">Bỏ chọn</dd>
+      <dt data-i18n="dragKey">Kéo chuột</dt><dd data-i18n="dragDo">Xoay góc nhìn</dd>
+      <dt data-i18n="rightKey">Chuột phải</dt><dd data-i18n="rightDo">Dời góc nhìn</dd>
+      <dt data-i18n="wheelKey">Con lăn</dt><dd data-i18n="wheelDo">Phóng to, thu nhỏ</dd>
     </dl>
   </section>
 </aside>
 
 <main class="sheet">
   <div class="strip">
-    <div><span class="lbl">Số thùng</span><span class="val lead" id="k-count"></span><span class="sub" id="k-count-sub"></span></div>
-    <div><span class="lbl">Chiều cao</span><span class="val" id="k-h"></span><span class="bar"><i id="b-h"></i></span><span class="sub" id="m-h"></span></div>
-    <div><span class="lbl">Khối lượng</span><span class="val" id="k-kg"></span><span class="bar"><i id="b-kg"></i></span><span class="sub" id="m-kg"></span></div>
-    <div><span class="lbl">Lấp đầy</span><span class="val" id="k-fill"></span><span class="sub">theo thể tích</span></div>
+    <div><span class="lbl" data-i18n="cartons">Số thùng</span><span class="val lead" id="k-count"></span><span class="sub" id="k-count-sub"></span></div>
+    <div><span class="lbl" data-i18n="height">Chiều cao</span><span class="val" id="k-h"></span><span class="bar"><i id="b-h"></i></span><span class="sub" id="m-h"></span></div>
+    <div><span class="lbl" data-i18n="weight">Khối lượng</span><span class="val" id="k-kg"></span><span class="bar"><i id="b-kg"></i></span><span class="sub" id="m-kg"></span></div>
+    <div><span class="lbl" data-i18n="fill">Lấp đầy</span><span class="val" id="k-fill"></span><span class="sub" data-i18n="byVolume">theo thể tích</span></div>
+    <div class="plan-cell"><span class="lbl" data-i18n="plan">Sơ đồ lớp</span><div class="plan" id="plan"></div></div>
   </div>
   <div class="notes">
     <p id="finding"></p>
@@ -225,12 +292,12 @@
   </div>
   <div class="canvas" id="view">
     <div class="ov" id="tools"></div>
-    <div class="ov" id="views" role="group" aria-label="Góc nhìn">
+    <div class="ov" id="views" role="group" aria-label="Góc nhìn" data-i18n-aria="views">
       <button class="tool" data-view="iso" aria-pressed="true">3D</button>
-      <button class="tool" data-view="top" aria-pressed="false" title="Nhìn từ trên xuống">Trên</button>
-      <button class="tool" data-view="front" aria-pressed="false" title="Nhìn mặt trước">Trước</button>
+      <button class="tool" data-view="top" aria-pressed="false" title="Nhìn từ trên xuống" data-i18n="top" data-i18n-title="topT">Trên</button>
+      <button class="tool" data-view="front" aria-pressed="false" title="Nhìn mặt trước" data-i18n="front" data-i18n-title="frontT">Trước</button>
     </div>
-    <label class="ov" id="layers">Lớp <input id="cut" type="range" min="1" max="1" value="1"><output id="cutv" class="num"></output></label>
+    <label class="ov" id="layers"><span data-i18n="layers">Lớp</span> <input id="cut" type="range" min="1" max="1" value="1"><output id="cutv" class="num"></output></label>
   </div>
 </main>
 </body>

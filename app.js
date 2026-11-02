@@ -7,12 +7,61 @@ import { optimize, verify, dropZ } from './engine.js';
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 const $ = id => document.getElementById(id);
 const form = $('spec'), f = form.elements;
-const STATUS = {
-  collision: [0xd63a3a, 'Va chạm'],
-  outside: [0x2f70bb, 'Ngoài biên'],
-  orient: [0xb8327a, 'Sai hướng'],
-  unsupported: [0x4a4d50, 'Thiếu đỡ'],
+const STATUS = { collision: 0xd63a3a, outside: 0x2f70bb, orient: 0xb8327a, unsupported: 0x4a4d50 };
+
+// Words in A.N.T's two languages; the choice is A.N.T's own (localStorage 'ant-language').
+const WORDS = {
+  vi: {
+    title: 'Phương án xếp hàng', reset: 'Khôi phục phương án', carton: 'Thùng carton', len: 'Dài', wid: 'Rộng', hei: 'Cao',
+    weight: 'Khối lượng', allowTip: 'Cho phép đặt nằm', pallet: 'Pallet', palletType: 'Loại pallet', custom: 'Tùy chỉnh',
+    maxH: 'Cao tối đa', maxKg: 'Tải tối đa', limitsHint: 'Chiều cao tính cả pallet. Tải 0 là không giới hạn.', advanced: 'Nâng cao',
+    palletH: 'Cao pallet', overhang: 'Tràn mép', minSupport: 'Diện tích đỡ tối thiểu', interlock: 'Xếp xen kẽ lớp',
+    gravity: 'Thùng tự rơi khi thả', snap: 'Bắt lưới 10 mm khi kéo', keys: 'Phím tắt', kRotate: 'Xoay thùng đang chọn',
+    kTip: 'Lật thùng', kDrop: 'Thả xuống mặt đỡ', kAdd: 'Thêm thùng', kDel: 'Xóa thùng', kEsc: 'Bỏ chọn',
+    dragKey: 'Kéo chuột', dragDo: 'Xoay góc nhìn', rightKey: 'Chuột phải', rightDo: 'Dời góc nhìn', wheelKey: 'Con lăn',
+    wheelDo: 'Phóng to, thu nhỏ', cartons: 'Số thùng', height: 'Chiều cao', fill: 'Lấp đầy', byVolume: 'theo thể tích',
+    plan: 'Sơ đồ lớp', views: 'Góc nhìn', top: 'Trên', topT: 'Nhìn từ trên xuống', front: 'Trước', frontT: 'Nhìn mặt trước',
+    layers: 'Lớp',
+    collision: 'Va chạm', outside: 'Ngoài biên', orient: 'Sai hướng', unsupported: 'Thiếu đỡ',
+    rz: 'Xoay', rx: 'Lật', drop: 'Thả', del: 'Xóa', esc: 'Bỏ chọn', clickToEdit: 'Nhấp vào thùng để chỉnh sửa', add: 'Thêm thùng',
+    box: 'Thùng {n}', unit: 'thùng', units: 'thùng', max: 'tối đa {v}', noLimit: 'không giới hạn',
+    editedMore: 'Đã chỉnh sửa: {d} thùng so với phương án tính ({n}).', editedSame: 'Đã chỉnh sửa: cùng số thùng với phương án tính ({n}).',
+    none: 'Không xếp được thùng nào với kích thước và giới hạn hiện tại.',
+    byKg: 'Giới hạn bởi tải trọng: thêm 1 thùng sẽ vượt {kg} kg.',
+    byH: 'Giới hạn bởi chiều cao: còn {left} mm, chưa đủ cho một lớp nữa ({v} mm).',
+    handEdited: 'đã chỉnh sửa thủ công', perLayer: '{p} / lớp × {f} lớp', onSide: ' · đặt nằm',
+    check: 'Kiểm chứng hình học:', findTitle: 'Chọn lần lượt các thùng {kind}', findHint: 'nhấp để tìm thùng lỗi',
+    checkOk: 'Kiểm chứng hình học: không va chạm, nằm trong giới hạn, mỗi thùng được đỡ ≥ {sup} % đáy. Trọng tâm lệch {cog} mm so với tâm pallet.',
+    faulty: '{n} thùng lỗi', valid: 'Hợp lệ', empty: 'Trống', needValue: 'cần nhập giá trị', atLeast: 'tối thiểu {v}', atMost: 'tối đa {v}',
+    overPallet: 'phải lớn hơn chiều cao pallet', odd: 'Lớp lẻ', even: 'Lớp chẵn', each: 'Mỗi lớp', nBoxes: '{n} thùng',
+  },
+  en: {
+    title: 'Load plan', reset: 'Back to the computed plan', carton: 'Carton', len: 'Length', wid: 'Width', hei: 'Height',
+    weight: 'Weight', allowTip: 'Allow laying on its side', pallet: 'Pallet', palletType: 'Pallet type', custom: 'Custom',
+    maxH: 'Max height', maxKg: 'Max load', limitsHint: 'Height includes the pallet. A load of 0 means no limit.', advanced: 'Advanced',
+    palletH: 'Pallet height', overhang: 'Overhang', minSupport: 'Minimum support', interlock: 'Interlock layers',
+    gravity: 'Cartons drop when released', snap: 'Snap to 10 mm when dragging', keys: 'Shortcuts', kRotate: 'Rotate the selected carton',
+    kTip: 'Tip the carton over', kDrop: 'Drop onto what is below', kAdd: 'Add a carton', kDel: 'Delete the carton', kEsc: 'Deselect',
+    dragKey: 'Drag', dragDo: 'Orbit the view', rightKey: 'Right drag', rightDo: 'Pan the view', wheelKey: 'Wheel',
+    wheelDo: 'Zoom in and out', cartons: 'Cartons', height: 'Height', fill: 'Fill', byVolume: 'by volume',
+    plan: 'Layer plan', views: 'View', top: 'Top', topT: 'View from above', front: 'Front', frontT: 'View from the front',
+    layers: 'Layers',
+    collision: 'Collision', outside: 'Out of bounds', orient: 'Wrong way up', unsupported: 'Unsupported',
+    rz: 'Rotate', rx: 'Tip', drop: 'Drop', del: 'Delete', esc: 'Deselect', clickToEdit: 'Click a carton to edit it', add: 'Add carton',
+    box: 'Carton {n}', unit: 'carton', units: 'cartons', max: 'max {v}', noLimit: 'no limit',
+    editedMore: 'Edited by hand: {d} against the computed plan of {n}.', editedSame: 'Edited by hand: the same count as the computed plan ({n}).',
+    none: 'No carton fits with these sizes and limits.',
+    byKg: 'Limited by weight: one more carton would pass {kg} kg.',
+    byH: 'Limited by height: {left} mm left, not enough for another layer ({v} mm).',
+    handEdited: 'edited by hand', perLayer: '{p} per layer × {f} layers', onSide: ' · on its side',
+    check: 'Geometry check:', findTitle: 'Select each carton in turn: {kind}', findHint: 'click to find the cartons',
+    checkOk: 'Geometry check: no collisions, within limits, every carton supported on at least {sup} % of its base. Centre of gravity {cog} mm from the pallet centre.',
+    faulty: '{n} at fault', valid: 'Valid', empty: 'Empty', needValue: 'enter a value', atLeast: 'at least {v}', atMost: 'at most {v}',
+    overPallet: 'must be more than the pallet height', odd: 'Odd layers', even: 'Even layers', each: 'Each layer', nBoxes: '{n} cartons',
+  },
 };
+let lang = 'vi';
+const t = (key, v = {}) => WORDS[lang][key].replace(/\{(\w+)\}/g, (_, k) => v[k]);
 const KRAFT = [0xc9a26b, 0xdcbd8c];
 const hex = c => '#' + c.toString(16).padStart(6, '0');
 const svg = d => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -25,14 +74,14 @@ const ICON = {
   esc: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   check: svg('<path d="M20 6 9 17l-5-5"/>'),
 };
-const TOOLS = [['rz', 'Xoay', 'R'], ['rx', 'Lật', 'T'], ['drop', 'Thả', 'G'], ['del', 'Xóa', 'Delete']];
+const TOOLS = [['rz', 'R'], ['rx', 'T'], ['drop', 'G'], ['del', 'Delete']];
 
 const view = $('view');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(devicePixelRatio);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); // 3x screens cost 2.25x the pixels for nothing visible
 view.prepend(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xeeefec);
+const css = name => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue(name).trim());
 const camera = new THREE.PerspectiveCamera(40, 1, 10, 60000);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f94, 2));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -51,7 +100,7 @@ scene.add(world);
 const unit = new THREE.BoxGeometry(1, 1, 1), unitEdges = new THREE.EdgesGeometry(unit);
 const edgeMat = new THREE.LineBasicMaterial({ color: 0x6b5330 });
 
-let spec, result, lastV, meshes = [], selected = null, edited = false, checksHtml = '';
+let spec, result, lastV, meshes = [], selected = null, edited = false, checksHtml = '', env = null, grid = null;
 const boxesOf = () => meshes.map(m => m.userData.box);
 
 function readSpec() {
@@ -70,7 +119,43 @@ function calc() {
   buildWorld();
   $('cut').value = $('cut').max = 999; // show every layer after a recalculation
   if (reframe) setView('iso');
+  renderPlan();
   refresh();
+}
+
+// The layer plan: the computed pattern from above, odd and even layers when they are interlocked.
+function renderPlan() {
+  const { boxes } = result, s = spec, o = s.overhang || 0, el = $('plan');
+  const levels = [...new Set(boxes.map(b => b.z))].sort((a, b) => a - b);
+  if (!levels.length) { el.innerHTML = '<span class="sub">—</span>'; return; }
+  const both = s.interlock && levels.length > 1;
+  el.innerHTML = levels.slice(0, both ? 2 : 1).map((z, k) => {
+    const layer = boxes.filter(b => b.z === z);
+    const name = t(both ? (k ? 'even' : 'odd') : 'each'), count = t('nBoxes', { n: layer.length });
+    return `<figure><svg viewBox="${-o} ${-o} ${s.L + 2 * o} ${s.W + 2 * o}" role="img" aria-label="${name}: ${count}">
+      <rect class="deck" width="${s.L}" height="${s.W}"/>${layer.map(b =>
+        `<rect class="c" x="${b.x}" y="${s.W - b.y - b.w}" width="${b.l}" height="${b.w}" fill="${hex(KRAFT[k % 2])}"/>`).join('')}
+      </svg><figcaption>${name}<span>${count}</span></figcaption></figure>`;
+  }).join('');
+}
+
+// Colours that follow the A.N.T theme: the well, the grid and the load envelope.
+function paint() {
+  scene.background = css('--well');
+  edgeMat.color.copy(css('--edge'));
+  if (!grid) return;
+  env.material.color.copy(css('--text'));
+  world.remove(grid);
+  grid.dispose();
+  world.add(grid = makeGrid());
+}
+
+function makeGrid() {
+  const { L, W, palletH, maxH } = spec, H = maxH - palletH;
+  const g = new THREE.GridHelper(Math.max(L, W, H) * 3, 30, css('--grid-major'), css('--grid-minor'));
+  g.rotation.x = Math.PI / 2;
+  g.position.set(L / 2, W / 2, -palletH);
+  return g;
 }
 
 function slab(x, y, z, l, w, h, mat) {
@@ -89,14 +174,11 @@ function buildWorld() {
   slab(0, 0, -deck, L, W, deck, wood);
   for (const y of [0, (W - 100) / 2, W - 100]) slab(0, y, -palletH, L, 100, palletH - deck, wood);
   // the allowed load envelope
-  const env = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color: 0x1b6c80, transparent: true, opacity: 0.4 }));
+  env = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color: css('--text'), transparent: true, opacity: 0.3 }));
   env.position.set(L / 2, W / 2, H / 2);
   env.scale.set(L + 2 * o, W + 2 * o, H);
   world.add(env);
-  const grid = new THREE.GridHelper(Math.max(L, W, H) * 3, 30, 0xc9cbc6, 0xdcddd9);
-  grid.rotation.x = Math.PI / 2;
-  grid.position.set(L / 2, W / 2, -palletH);
-  world.add(grid);
+  world.add(grid = makeGrid());
   meshes = result.boxes.map(b => addMesh({ ...b }));
 }
 
@@ -178,7 +260,7 @@ function edit(op) {
   refresh();
 }
 
-const fmt = (x, d = 0) => (+x).toLocaleString('vi-VN', { maximumFractionDigits: d });
+const fmt = (x, d = 0) => (+x).toLocaleString(lang === 'en' ? 'en-GB' : 'vi-VN', { maximumFractionDigits: d });
 
 function renderTools() {
   const el = $('tools'), has = String(!!selected);
@@ -186,14 +268,14 @@ function renderTools() {
     el.dataset.has = has;
     el.innerHTML = selected
       ? `<b id="selname"></b><span class="dim num" id="seldims"></span><span class="sep"></span>` +
-        TOOLS.map(([op, label, key]) => `<button class="tool" data-op="${op}" title="${label} (${key})" aria-keyshortcuts="${key}">${ICON[op]}${label}</button>`).join('') +
-        `<button class="tool" data-op="esc" title="Bỏ chọn (Esc)" aria-label="Bỏ chọn">${ICON.esc}</button>`
-      : `<span class="dim">Nhấp vào thùng để chỉnh sửa</span>` +
-        `<button class="tool" data-op="add" title="Thêm thùng (N)" aria-keyshortcuts="N">${ICON.add}Thêm thùng</button>`;
+        TOOLS.map(([op, key]) => `<button class="tool" data-op="${op}" title="${t(op)} (${key})" aria-label="${t(op)}" aria-keyshortcuts="${key}">${ICON[op]}<span>${t(op)}</span></button>`).join('') +
+        `<button class="tool" data-op="esc" title="${t('esc')} (Esc)" aria-label="${t('esc')}">${ICON.esc}</button>`
+      : `<span class="dim">${t('clickToEdit')}</span>` +
+        `<button class="tool" data-op="add" title="${t('add')} (N)" aria-keyshortcuts="N">${ICON.add}${t('add')}</button>`;
   }
   if (selected) {
     const b = selected.userData.box;
-    $('selname').textContent = `Thùng ${meshes.indexOf(selected) + 1}`;
+    $('selname').textContent = t('box', { n: meshes.indexOf(selected) + 1 });
     $('seldims').textContent = `${b.l} × ${b.w} × ${b.h} mm`;
   }
 }
@@ -203,19 +285,18 @@ function setLimit(id, val, max, unit, limiting) {
   const ratio = max > 0 ? val / max : 0;
   $(`b-${id}`).style.width = Math.min(100, ratio * 100) + '%';
   $(`b-${id}`).className = ratio > 1 + 1e-9 ? 'over' : limiting ? 'lim' : '';
-  $(`m-${id}`).textContent = max > 0 ? `tối đa ${fmt(max)} ${unit}` : 'không giới hạn';
+  $(`m-${id}`).textContent = max > 0 ? t('max', { v: `${fmt(max)} ${unit}` }) : t('noLimit');
 }
 
 function finding(v) {
   const r = result, s = spec;
   if (edited) {
     const d = v.count - r.total;
-    return d ? `Đã chỉnh sửa: ${d > 0 ? '+' : '−'}${Math.abs(d)} thùng so với phương án tính (${r.total}).`
-      : `Đã chỉnh sửa: cùng số thùng với phương án tính (${r.total}).`;
+    return d ? t('editedMore', { d: `${d > 0 ? '+' : '−'}${Math.abs(d)}`, n: r.total }) : t('editedSame', { n: r.total });
   }
-  if (!r.total) return 'Không xếp được thùng nào với kích thước và giới hạn hiện tại.';
-  if (r.limit === 'tải trọng') return `Giới hạn bởi tải trọng: thêm 1 thùng sẽ vượt ${fmt(s.maxKg)} kg.`;
-  return `Giới hạn bởi chiều cao: còn ${fmt(s.maxH - r.totalHeight)} mm, chưa đủ cho một lớp nữa (${fmt(r.v)} mm).`;
+  if (!r.total) return t('none');
+  if (r.limit === 'tải trọng') return t('byKg', { kg: fmt(s.maxKg) });
+  return t('byH', { left: fmt(s.maxH - r.totalHeight), v: fmt(r.v) });
 }
 
 function refresh() {
@@ -226,18 +307,18 @@ function refresh() {
   const cut = $('cut'), all = +cut.value >= +cut.max;
   cut.max = Math.max(1, levels.length);
   if (all) cut.value = cut.max;
-  $('cutv').textContent = `${cut.value}/${levels.length}`;
+  $('cutv').textContent = `${Math.min(+cut.value, levels.length)}/${levels.length}`; // 0/0 when the pallet is empty
   meshes.forEach((m, i) => {
     const st = v.status[i], lv = levels.indexOf(Math.round(bx[i].z));
-    m.material.color.set(st ? STATUS[st][0] : KRAFT[lv % 2]);
-    m.material.emissive.set(m === selected ? 0x1b6c80 : 0x000000);
+    m.material.color.set(st ? STATUS[st] : KRAFT[lv % 2]);
+    m.material.emissive.set(m === selected ? 0xff5f2e : 0x000000); // A.N.T's one orange marks the carton being edited
     m.visible = m === selected || lv < +cut.value;
   });
 
-  $('k-count').innerHTML = `${fmt(v.count)}<small> thùng</small>`;
+  $('k-count').innerHTML = `${fmt(v.count)}<small> ${t(v.count === 1 ? 'unit' : 'units')}</small>`;
   const full = Math.floor(r.total / r.perLayer), rest = r.total % r.perLayer; // a weight limit can leave the top layer partial
-  $('k-count-sub').textContent = edited ? 'đã chỉnh sửa thủ công'
-    : r.total ? `${r.perLayer} / lớp × ${full} lớp${rest ? ` + ${rest}` : ''}${r.v !== spec.h ? ' · đặt nằm' : ''}` : '—';
+  $('k-count-sub').textContent = edited ? t('handEdited')
+    : r.total ? `${t('perLayer', { p: r.perLayer, f: full })}${rest ? ` + ${rest}` : ''}${r.v !== spec.h ? t('onSide') : ''}` : '—';
   setLimit('h', v.height + spec.palletH, spec.maxH, 'mm', !edited && r.limit === 'chiều cao');
   setLimit('kg', v.weight, spec.maxKg, 'kg', !edited && r.limit === 'tải trọng');
   $('k-fill').textContent = v.count ? fmt(v.volUtil * 100, 1) + ' %' : '—';
@@ -246,14 +327,14 @@ function refresh() {
   const bad = v.status.filter(Boolean).length;
   const kinds = Object.keys(STATUS).map(k => [k, v.status.filter(s => s === k).length]).filter(([, n]) => n);
   const html = !v.count ? '' : bad
-    ? `<span class="neg">Kiểm chứng hình học:</span>` +
-      kinds.map(([k, n]) => `<button class="chip" data-kind="${k}" title="Chọn lần lượt các thùng ${STATUS[k][1].toLowerCase()}"><i style="background:${hex(STATUS[k][0])}"></i>${STATUS[k][1]} ${n}</button>`).join('') +
-      `<span>nhấp để tìm thùng lỗi</span>`
-    : `${ICON.check}<span>Kiểm chứng hình học: không va chạm, nằm trong giới hạn, mỗi thùng được đỡ ≥ ${fmt(spec.minSupport * 100)} % đáy. Trọng tâm lệch ${fmt(v.cogOffset)} mm so với tâm pallet.</span>`;
+    ? `<span class="neg">${t('check')}</span>` +
+      kinds.map(([k, n]) => `<button class="chip" data-kind="${k}" title="${t('findTitle', { kind: t(k).toLowerCase() })}"><i style="background:${hex(STATUS[k])}"></i>${t(k)} ${n}</button>`).join('') +
+      `<span>${t('findHint')}</span>`
+    : `${ICON.check}<span>${t('checkOk', { sup: fmt(spec.minSupport * 100), cog: fmt(v.cogOffset) })}</span>`;
   if (html !== checksHtml) $('checks').innerHTML = checksHtml = html;
 
   $('pill').className = 'pill ' + (bad ? 'neg' : v.count ? 'pos' : '');
-  $('pill').textContent = bad ? `${bad} thùng lỗi` : v.count ? 'Hợp lệ' : 'Trống';
+  $('pill').textContent = bad ? t('faulty', { n: bad }) : t(v.count ? 'valid' : 'empty');
   $('reset').hidden = !edited;
   renderTools();
 }
@@ -265,12 +346,17 @@ form.addEventListener('input', e => {
     $('custom').hidden = !!p;
     if (p) [f.L.value, f.W.value] = p;
   } else if (!e.target.name) return; // editor toggles don't change the plan
-  f.maxH.setCustomValidity(+f.maxH.value > +f.palletH.value ? '' : 'phải lớn hơn chiều cao pallet');
+  f.maxH.setCustomValidity(+f.maxH.value > +f.palletH.value ? '' : t('overPallet'));
   for (const el of form.elements) if (el.name) el.setAttribute('aria-invalid', !el.validity.valid);
   const bad = form.querySelector(':invalid'), err = $('err');
+  for (const el of form.querySelectorAll('[aria-describedby~="err"]')) {
+    const rest = el.getAttribute('aria-describedby').replace(/\berr\b/, '').trim();
+    rest ? el.setAttribute('aria-describedby', rest) : el.removeAttribute('aria-describedby');
+  }
+  if (bad) bad.setAttribute('aria-describedby', `${bad.getAttribute('aria-describedby') || ''} err`.trim()); // read with the field
   if (bad) { // the message goes under the field's row; the old result dims so it isn't read as current
     const v = bad.validity;
-    const why = v.valueMissing ? 'cần nhập giá trị' : v.rangeUnderflow ? `tối thiểu ${bad.min}` : v.rangeOverflow ? `tối đa ${bad.max}` : bad.validationMessage;
+    const why = v.valueMissing ? t('needValue') : v.rangeUnderflow ? t('atLeast', { v: bad.min }) : v.rangeOverflow ? t('atMost', { v: bad.max }) : bad.validationMessage;
     err.textContent = `${bad.closest('label').firstChild.textContent.trim()}: ${why}`;
     (bad.closest('.row2, .row3') || bad.closest('label')).after(err);
   } else err.textContent = '';
@@ -313,4 +399,23 @@ new ResizeObserver(() => {
   renderer.render(scene, camera); // setSize clears the buffer; redraw now so the view never flashes empty
 }).observe(view);
 renderer.setAnimationLoop(() => renderer.render(scene, camera));
+// A.N.T switches its theme in the parent page; the change reaches this frame as a storage event.
+addEventListener('storage', e => {
+  if (e.key === 'ant-language') return setLang();
+  if (e.key !== 'ant-theme') return;
+  document.documentElement.dataset.theme = e.newValue === 'dark' ? 'dark' : 'light';
+  paint();
+});
+
+function setLang() {
+  try { lang = localStorage.getItem('ant-language') === 'en' ? 'en' : 'vi'; } catch (e) { lang = 'vi'; }
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.i18nAria)); });
+  $('tools').dataset.has = ''; // rebuild the edit bar in the new words
+  if (spec) { renderPlan(); refresh(); }
+}
+setLang();
+paint();
 calc();
