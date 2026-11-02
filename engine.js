@@ -1,7 +1,9 @@
 // Pallet Optimization Engine + geometric verification.
 // Units: mm, kg. Origin = pallet corner on the top deck (z = 0), x along L, y along W, z up.
 
-const EPS = 0.5;
+// Tolerance, mm. Inputs are whole mm and centring adds halves, all exact in floating point,
+// so anything above float noise is a real gap or overlap.
+const EPS = 0.01;
 const ov = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
 
 // All sums i*a + j*b <= max: the only cut positions a guillotine pattern ever needs.
@@ -87,7 +89,7 @@ export function optimize(s) {
       if (boxes.length >= best.total) break;
       const x = p.x + dx;
       // interlock: mirror odd layers across the pallet centre
-      boxes.push({ x: s.interlock && k % 2 ? s.L - x - p.l : x, y: p.y + dy, z: k * v, l: p.l, w: p.w, h: v });
+      boxes.push({ id: boxes.length, x: s.interlock && k % 2 ? s.L - x - p.l : x, y: p.y + dy, z: k * v, l: p.l, w: p.w, h: v });
     }
   return {
     ...best, layer: undefined, boxes,
@@ -125,6 +127,11 @@ export function verify(boxes, s) {
   for (const i of orient) status[i] = 'orient';
   for (const i of outside) status[i] = 'outside';
   for (const [i, j] of collisions) status[i] = status[j] = 'collision';
+  return { ...measure(boxes, s), collisions, outside, orient, unsupported, status, ok: status.every(x => x === null) };
+}
+
+// Totals read from the boxes themselves, the same way for the computed plan and for the 3D scene.
+export function measure(boxes, s) {
   const n = boxes.length;
   const height = n ? Math.max(...boxes.map(b => b.z + b.h)) : 0;
   const vol = boxes.reduce((t, b) => t + b.l * b.w * b.h, 0);
@@ -137,9 +144,49 @@ export function verify(boxes, s) {
     count: n, height, weight: n * (s.kg || 0),
     volUtil: height ? vol / (s.L * s.W * height) : 0,
     cog, cogOffset: Math.hypot(cog.x - s.L / 2, cog.y - s.W / 2),
-    collisions, outside, orient, unsupported, status,
-    ok: status.every(x => x === null),
   };
+}
+
+// The computed plan against the boxes as built in 3D: carton by carton (matched on the plan's id) and in total.
+export function reconcile(plan, built, s) {
+  const a = measure(plan, s), g = measure(built, s);
+  const byId = new Map(built.map(b => [b.id, b]));
+  let maxDev = 0, moved = 0, missing = 0;
+  for (const p of plan) {
+    const b = byId.get(p.id);
+    if (!b) { missing++; continue; }
+    const d = Math.max(...['x', 'y', 'z', 'l', 'w', 'h'].map(k => Math.abs(b[k] - p[k])));
+    if (d > EPS) moved++;
+    maxDev = Math.max(maxDev, d);
+  }
+  const extra = built.filter(b => b.id == null).length;
+  return {
+    plan: a, built: g, tolerance: EPS, maxDev, moved, missing, extra,
+    matched: plan.length - moved - missing,
+    exact: !moved && !missing && !extra,
+    diff: {
+      count: g.count - a.count, height: g.height - a.height, weight: g.weight - a.weight, volUtil: g.volUtil - a.volUtil,
+      cog: Math.hypot(g.cog.x - a.cog.x, g.cog.y - a.cog.y, g.cog.z - a.cog.z),
+    },
+  };
+}
+
+// Lock a dragged box's faces onto the nearest faces around it (other boxes, the pallet edges, the deck) within
+// `reach` mm, so a hand edit lands exactly where the plan's boxes sit; a fixed grid left 5 mm overlaps on plans centred at 25 mm.
+export function snapToFaces(b, others, s, reach = 15) {
+  const o = s.overhang || 0;
+  const faces = {
+    x: [0, s.L, -o, s.L + o, ...others.flatMap(c => [c.x, c.x + c.l])],
+    y: [0, s.W, -o, s.W + o, ...others.flatMap(c => [c.y, c.y + c.w])],
+    z: [0, ...others.flatMap(c => [c.z, c.z + c.h])],
+  };
+  for (const [k, size] of [['x', 'l'], ['y', 'w'], ['z', 'h']]) {
+    let best = reach, shift = 0;
+    for (const face of faces[k]) for (const edge of [b[k], b[k] + b[size]]) {
+      if (Math.abs(face - edge) < best) { best = Math.abs(face - edge); shift = face - edge; }
+    }
+    b[k] += shift;
+  }
 }
 
 // Gravity: lowest z the box falls to from where it is now.

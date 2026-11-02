@@ -103,7 +103,7 @@
         border-radius: 999px; background: var(--surface-2) }
 
   /* the sheet: the answer first, then the 3D work */
-  .sheet { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 20px; background: var(--surface); border-radius: var(--radius-card) }
+  .sheet { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; padding: 20px; background: var(--surface); border-radius: var(--radius-card) }
   .strip { display: grid; grid-template-columns: 1.15fr 1fr 1fr .8fr 1.3fr }
   .strip > div { display: grid; gap: 4px; align-content: start; min-width: 0; padding: 0 20px; border-left: 1px solid var(--line) }
   .strip > div:first-child { padding-left: 0; border-left: 0 }
@@ -131,12 +131,24 @@
   #checks svg { color: var(--pill-positive-ink); vertical-align: -3px; margin-right: 6px }
   :root[data-theme="dark"] #checks svg { color: #4cc777 }
   #checks .neg { color: var(--negative); font-weight: 500; margin-right: 6px }
+  /* plan ↔ 3D: one line with the verdict, the table behind it */
+  #recon summary { width: auto; margin: 0; align-items: flex-start; font-size: 13px; font-weight: 400; line-height: 1.7; color: var(--text-3) }
+  #recon summary > svg { flex: none; margin-top: 5px }
+  #recon-sum b { font-weight: 500; color: var(--text-2) }
+  #recon-sum svg { color: var(--pill-positive-ink); vertical-align: -3px; margin-right: 6px; transform: none }
+  :root[data-theme="dark"] #recon-sum svg { color: #4cc777 }
+  #recon .scroll { overflow-x: auto; margin: 6px 0 0 22px }
+  #recon table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums }
+  #recon th, #recon td { padding: 5px 0 5px 24px; text-align: right; font-weight: 400; white-space: nowrap; border-bottom: 1px solid var(--line) }
+  #recon th { font-size: 12px; color: var(--text-3) }
+  #recon th:first-child, #recon td:first-child { padding-left: 0; text-align: left; color: var(--text-3) }
+  #recon .dev { color: var(--primary-ink); font-weight: 500 }
   .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; margin-right: 6px; padding: 0 12px; border: 0;
           border-radius: 999px; background: var(--surface-2); font-size: 13px; cursor: pointer; white-space: nowrap; transition: background-color .15s }
   .chip:hover { background: var(--surface-3) }
   .chip i { width: 10px; height: 10px; border-radius: 3px }
 
-  .canvas { position: relative; flex: 1; min-height: 0; border-radius: var(--radius-well); overflow: hidden; background: var(--well); container-type: inline-size }
+  .canvas { position: relative; flex: 1 1 0; min-height: 360px; /* the open comparison table scrolls the sheet, never squashes the view */ border-radius: var(--radius-well); overflow: hidden; background: var(--well); container-type: inline-size }
   /* the edit bar keeps one line: the size goes first, then the words beside the icons */
   @container (max-width: 600px) { #seldims, #tools .sep { display: none } }
   @container (max-width: 440px) { #tools .tool span { display: none } }
@@ -256,7 +268,7 @@
         <label><span data-i18n="minSupport">Diện tích đỡ tối thiểu</span> <i>%</i><input name="minSupport" type="number" inputmode="numeric" min="0" max="100" value="80" required></label>
         <label class="check"><input name="interlock" type="checkbox" checked> <span data-i18n="interlock">Xếp xen kẽ lớp</span></label>
         <label class="check"><input id="gravity" type="checkbox" checked> <span data-i18n="gravity">Thùng tự rơi khi thả</span></label>
-        <label class="check"><input id="snap" type="checkbox" checked> <span data-i18n="snap">Bắt lưới 10 mm khi kéo</span></label>
+        <label class="check"><input id="snap" type="checkbox" checked> <span data-i18n="snap">Bắt dính vào mặt thùng khi kéo</span></label>
       </div>
     </details>
     <p class="err" id="err" role="alert"></p>
@@ -289,6 +301,10 @@
   <div class="notes">
     <p id="finding"></p>
     <div id="checks"></div>
+    <details id="recon">
+      <summary><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><span id="recon-sum"></span></summary>
+      <div class="scroll"><table id="recon-table"></table></div>
+    </details>
   </div>
   <div class="canvas" id="view">
     <div class="ov" id="tools"></div>

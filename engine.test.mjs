@@ -1,6 +1,6 @@
 // node engine.test.mjs
 import assert from 'node:assert/strict';
-import { layoutLayer, optimize, verify, dropZ } from './engine.js';
+import { layoutLayer, optimize, verify, dropZ, reconcile, snapToFaces } from './engine.js';
 
 // guillotine 2-block beats the plain grid (9) on 1200×1000; Euro pallet is an exact fit
 assert.equal(layoutLayer(1200, 1000, 400, 300).length, 10);
@@ -31,5 +31,34 @@ assert.equal(bad.ok, false);
 
 const stack = [b(0, 0, 0), b(0, 0, 900)];
 assert.equal(dropZ(stack, stack[1]), 250);
+
+// tolerance is 0.01 mm: touching faces are fine, a 0.1 mm overlap is a collision
+assert.equal(verify([b(0, 0, 0), b(400, 0, 0)], spec).collisions.length, 0);
+assert.equal(verify([b(0, 0, 0), b(399.9, 0, 0)], spec).collisions.length, 1);
+
+// reconcile: an exact copy matches to 0 mm; a moved, a deleted and an added carton are each counted
+const copy = r.boxes.map(x => ({ ...x }));
+const same = reconcile(r.boxes, copy, spec);
+assert.ok(same.exact);
+assert.equal(same.maxDev, 0);
+assert.equal(same.matched, 60);
+assert.deepEqual(same.diff, { count: 0, height: 0, weight: 0, volUtil: 0, cog: 0 });
+copy[0].x += 5;
+copy.pop();
+copy.push(b(0, 0, 1500));
+const drift = reconcile(r.boxes, copy, spec);
+assert.deepEqual([drift.matched, drift.moved, drift.missing, drift.extra, drift.maxDev, drift.diff.count, drift.exact],
+  [58, 1, 1, 1, 5, 0, false]);
+
+// snapping: a carton dragged to within 15 mm of its slot locks back exactly, so the plan matches to 0 mm again
+const hand = r.boxes.map(x => ({ ...x }));
+const top = hand[hand.length - 1];
+top.x += 7.3; top.y -= 11.9; top.z += 4.2;
+snapToFaces(top, hand.filter(c => c !== top), spec);
+const back = reconcile(r.boxes, hand, spec);
+assert.ok(back.exact && back.maxDev === 0, JSON.stringify(top));
+top.x += 30; // further than the reach: left where the hand put it
+snapToFaces(top, hand.filter(c => c !== top), spec);
+assert.equal(reconcile(r.boxes, hand, spec).maxDev, 30);
 
 console.log('engine OK');

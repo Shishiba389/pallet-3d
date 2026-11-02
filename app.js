@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { optimize, verify, dropZ } from './engine.js';
+import { optimize, verify, dropZ, reconcile, snapToFaces } from './engine.js';
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 const $ = id => document.getElementById(id);
@@ -16,7 +16,7 @@ const WORDS = {
     weight: 'Khối lượng', allowTip: 'Cho phép đặt nằm', pallet: 'Pallet', palletType: 'Loại pallet', custom: 'Tùy chỉnh',
     maxH: 'Cao tối đa', maxKg: 'Tải tối đa', limitsHint: 'Chiều cao tính cả pallet. Tải 0 là không giới hạn.', advanced: 'Nâng cao',
     palletH: 'Cao pallet', overhang: 'Tràn mép', minSupport: 'Diện tích đỡ tối thiểu', interlock: 'Xếp xen kẽ lớp',
-    gravity: 'Thùng tự rơi khi thả', snap: 'Bắt lưới 10 mm khi kéo', keys: 'Phím tắt', kRotate: 'Xoay thùng đang chọn',
+    gravity: 'Thùng tự rơi khi thả', snap: 'Bắt dính vào mặt thùng khi kéo', keys: 'Phím tắt', kRotate: 'Xoay thùng đang chọn',
     kTip: 'Lật thùng', kDrop: 'Thả xuống mặt đỡ', kAdd: 'Thêm thùng', kDel: 'Xóa thùng', kEsc: 'Bỏ chọn',
     dragKey: 'Kéo chuột', dragDo: 'Xoay góc nhìn', rightKey: 'Chuột phải', rightDo: 'Dời góc nhìn', wheelKey: 'Con lăn',
     wheelDo: 'Phóng to, thu nhỏ', cartons: 'Số thùng', height: 'Chiều cao', fill: 'Lấp đầy', byVolume: 'theo thể tích',
@@ -34,13 +34,17 @@ const WORDS = {
     checkOk: 'Kiểm chứng hình học: không va chạm, nằm trong giới hạn, mỗi thùng được đỡ ≥ {sup} % đáy. Trọng tâm lệch {cog} mm so với tâm pallet.',
     faulty: '{n} thùng lỗi', valid: 'Hợp lệ', empty: 'Trống', needValue: 'cần nhập giá trị', atLeast: 'tối thiểu {v}', atMost: 'tối đa {v}',
     overPallet: 'phải lớn hơn chiều cao pallet', odd: 'Lớp lẻ', even: 'Lớp chẵn', each: 'Mỗi lớp', nBoxes: '{n} thùng',
+    recon: 'Tính toán ↔ 3D:', reconOf: '{m}/{n} thùng trùng khớp', reconMoved: '{n} lệch', reconMissing: '{n} thiếu',
+    reconExtra: '{n} thêm', reconDev: 'sai lệch lớn nhất {v} mm', reconTol: '(dung sai {v} mm)',
+    colMetric: 'Chỉ số', colPlan: 'Tính toán', colBuilt: '3D đo được', colDiff: 'Sai lệch',
+    rLoadH: 'Chiều cao hàng', rCog: 'Trọng tâm x; y; z', rBoxes: 'Vị trí từng thùng',
   },
   en: {
     title: 'Load plan', reset: 'Back to the computed plan', carton: 'Carton', len: 'Length', wid: 'Width', hei: 'Height',
     weight: 'Weight', allowTip: 'Allow laying on its side', pallet: 'Pallet', palletType: 'Pallet type', custom: 'Custom',
     maxH: 'Max height', maxKg: 'Max load', limitsHint: 'Height includes the pallet. A load of 0 means no limit.', advanced: 'Advanced',
     palletH: 'Pallet height', overhang: 'Overhang', minSupport: 'Minimum support', interlock: 'Interlock layers',
-    gravity: 'Cartons drop when released', snap: 'Snap to 10 mm when dragging', keys: 'Shortcuts', kRotate: 'Rotate the selected carton',
+    gravity: 'Cartons drop when released', snap: 'Snap to carton faces when dragging', keys: 'Shortcuts', kRotate: 'Rotate the selected carton',
     kTip: 'Tip the carton over', kDrop: 'Drop onto what is below', kAdd: 'Add a carton', kDel: 'Delete the carton', kEsc: 'Deselect',
     dragKey: 'Drag', dragDo: 'Orbit the view', rightKey: 'Right drag', rightDo: 'Pan the view', wheelKey: 'Wheel',
     wheelDo: 'Zoom in and out', cartons: 'Cartons', height: 'Height', fill: 'Fill', byVolume: 'by volume',
@@ -58,6 +62,10 @@ const WORDS = {
     checkOk: 'Geometry check: no collisions, within limits, every carton supported on at least {sup} % of its base. Centre of gravity {cog} mm from the pallet centre.',
     faulty: '{n} at fault', valid: 'Valid', empty: 'Empty', needValue: 'enter a value', atLeast: 'at least {v}', atMost: 'at most {v}',
     overPallet: 'must be more than the pallet height', odd: 'Odd layers', even: 'Even layers', each: 'Each layer', nBoxes: '{n} cartons',
+    recon: 'Plan ↔ 3D:', reconOf: '{m} of {n} cartons match', reconMoved: '{n} moved', reconMissing: '{n} missing',
+    reconExtra: '{n} added', reconDev: 'largest deviation {v} mm', reconTol: '(tolerance {v} mm)',
+    colMetric: 'Measure', colPlan: 'Computed', colBuilt: 'Measured in 3D', colDiff: 'Deviation',
+    rLoadH: 'Load height', rCog: 'Centre of gravity x; y; z', rBoxes: 'Each carton’s position',
   },
 };
 let lang = 'vi';
@@ -102,6 +110,14 @@ const edgeMat = new THREE.LineBasicMaterial({ color: 0x6b5330 });
 
 let spec, result, lastV, meshes = [], selected = null, edited = false, checksHtml = '', env = null, grid = null;
 const boxesOf = () => meshes.map(m => m.userData.box);
+// What is actually drawn: each carton's bounds read back from its 3D object, not the numbers it was given.
+const box3 = new THREE.Box3();
+const builtOf = () => meshes.map(m => {
+  const { min, max } = box3.setFromObject(m);
+  return { id: m.userData.box.id, x: min.x, y: min.y, z: min.z, l: max.x - min.x, w: max.y - min.y, h: max.z - min.z };
+});
+// Faces pushed back a hair so the carton edges lying on them always draw (from straight above they used to vanish).
+const OFFSET = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
 
 function readSpec() {
   const n = k => Math.round(+f[k].value);
@@ -169,7 +185,7 @@ function buildWorld() {
   select(null);
   world.clear(); // ponytail: per-box materials leak on recalc; dispose them if recalcs get into the thousands
   const { L, W, palletH, overhang: o, maxH } = spec, H = maxH - palletH;
-  const wood = new THREE.MeshStandardMaterial({ color: 0x9c7748 });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x9c7748, ...OFFSET });
   const deck = Math.min(22, palletH);
   slab(0, 0, -deck, L, W, deck, wood);
   for (const y of [0, (W - 100) / 2, W - 100]) slab(0, y, -palletH, L, 100, palletH - deck, wood);
@@ -183,7 +199,7 @@ function buildWorld() {
 }
 
 function addMesh(box) {
-  const m = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({ emissiveIntensity: 0.55 }));
+  const m = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({ emissiveIntensity: 0.55, ...OFFSET }));
   m.add(new THREE.LineSegments(unitEdges, edgeMat));
   m.userData.box = box;
   sync(m);
@@ -209,10 +225,7 @@ function setView(kind) {
 function onMove() {
   const m = tc.object, b = m.userData.box;
   b.x = m.position.x - b.l / 2; b.y = m.position.y - b.w / 2; b.z = m.position.z - b.h / 2;
-  if ($('snap').checked) { // snap the corner, not the centre, so edges line up with neighbours
-    for (const k of ['x', 'y', 'z']) b[k] = Math.round(b[k] / 10) * 10;
-    sync(m);
-  }
+  if ($('snap').checked) { snapToFaces(b, boxesOf().filter(c => c !== b), spec); sync(m); }
   edited = true;
   refresh();
 }
@@ -299,9 +312,36 @@ function finding(v) {
   return t('byH', { left: fmt(s.maxH - r.totalHeight), v: fmt(r.v) });
 }
 
+const fx = (x, d) => (+x).toLocaleString(lang === 'en' ? 'en-GB' : 'vi-VN', { minimumFractionDigits: d, maximumFractionDigits: d });
+// A deviation cell: zero within tolerance, otherwise signed (or a plain distance) and marked.
+const devCell = (x, d, tol, signed = true) => Math.abs(x) <= tol ? `<td>${fx(0, d)}</td>`
+  : `<td class="dev">${signed ? (x > 0 ? '+' : '−') : ''}${fx(Math.abs(x), d)}</td>`;
+
+function renderRecon(rc) {
+  const { plan: a, built: g, diff, tolerance: tol } = rc, n = result.boxes.length;
+  $('recon').hidden = !n && !g.count;
+  const parts = [t('reconOf', { m: rc.matched, n })];
+  for (const k of ['Moved', 'Missing', 'Extra']) if (rc[k.toLowerCase()]) parts.push(t('recon' + k, { n: rc[k.toLowerCase()] }));
+  $('recon-sum').innerHTML = (rc.exact ? ICON.check : '') + `<b>${t('recon')}</b> ` + [...parts, t('reconDev', { v: fx(rc.maxDev, 3) })].join(' · ') +
+    (rc.exact ? ` ${t('reconTol', { v: fx(tol, 2) })}` : '');
+  const cog = c => `${fx(c.x, 1)}; ${fx(c.y, 1)}; ${fx(c.z, 1)}`;
+  const rows = [
+    [t('cartons'), fmt(a.count), fmt(g.count), devCell(diff.count, 0, 0)],
+    [`${t('rLoadH')} (mm)`, fx(a.height, 3), fx(g.height, 3), devCell(diff.height, 3, tol)],
+    [`${t('weight')} (kg)`, fx(a.weight, 1), fx(g.weight, 1), devCell(diff.weight, 1, 1e-6)],
+    [`${t('fill')} (%)`, fx(a.volUtil * 100, 2), fx(g.volUtil * 100, 2), devCell(diff.volUtil * 100, 2, 1e-6)],
+    [`${t('rCog')} (mm)`, cog(a.cog), cog(g.cog), devCell(diff.cog, 3, tol, false)],
+    [`${t('rBoxes')} (mm)`, fmt(n), `${rc.matched}/${n}`, devCell(rc.maxDev, 3, tol, false)],
+  ];
+  $('recon-table').innerHTML = `<tr><th>${t('colMetric')}</th><th>${t('colPlan')}</th><th>${t('colBuilt')}</th><th>${t('colDiff')}</th></tr>` +
+    rows.map(([k, p, b, d]) => `<tr><td>${k}</td><td>${p}</td><td>${b}</td>${d}</tr>`).join('');
+}
+
 function refresh() {
-  const bx = boxesOf(), v = verify(bx, spec), r = result;
+  // verify and compare what is drawn, measured back out of the scene
+  const bx = builtOf(), v = verify(bx, spec), r = result;
   lastV = v;
+  renderRecon(reconcile(r.boxes, bx, spec));
 
   const levels = [...new Set(bx.map(b => Math.round(b.z)))].sort((a, b) => a - b);
   const cut = $('cut'), all = +cut.value >= +cut.max;
