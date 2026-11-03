@@ -63,42 +63,107 @@ export function layoutLayer(L, W, a, b) {
   return out;
 }
 
-// s: { L, W, palletH, maxH (incl. pallet), maxKg, overhang, l, w, h, kg, allowTip, interlock }
+// One layer's pattern laid out with overhang o and centred on the pallet.
+function centred(s, a, b, o) {
+  const layer = layoutLayer(s.L + 2 * o, s.W + 2 * o, a, b);
+  const dx = (s.L - Math.max(0, ...layer.map(p => p.x + p.l))) / 2, dy = (s.W - Math.max(0, ...layer.map(p => p.y + p.w))) / 2;
+  return layer.map(p => ({ ...p, x: p.x + dx, y: p.y + dy }));
+}
+
+// The first `count` boxes of the stack; odd layers mirrored across the pallet centre on the axes in `flip`.
+function stack(s, layer, v, flip, count) {
+  const boxes = [];
+  for (let k = 0; boxes.length < count; k++)
+    for (const p of layer) {
+      if (boxes.length >= count) break;
+      const odd = k % 2 === 1;
+      boxes.push({ id: boxes.length, x: odd && flip.includes('x') ? s.L - p.x - p.l : p.x,
+        y: odd && flip.includes('y') ? s.W - p.y - p.w : p.y, z: k * v, l: p.l, w: p.w, h: v });
+    }
+  return boxes;
+}
+
+// s: { L, W, palletH, maxH (incl. pallet), maxKg, overhang, l, w, h, kg, allowTip, interlock, minSupport }
+// Only plans that pass verify() are chosen: the count it reports is a stack that stands up.
 export function optimize(s) {
-  const o = s.overhang || 0, loadH = s.maxH - s.palletH;
-  const PL = s.L + 2 * o, PW = s.W + 2 * o;
+  const loadH = s.maxH - s.palletH;
   const dims = [[s.l, s.w, s.h]];
   if (s.allowTip) dims.push([s.l, s.h, s.w], [s.w, s.h, s.l]);
   const byKg = s.maxKg > 0 && s.kg > 0 ? Math.floor(s.maxKg / s.kg) : Infinity;
+  const better = (c, best) => !best || c.total > best.total || (c.total === best.total && c.loadHeight < best.loadHeight);
   let best = null;
   for (const [a, b, v] of dims) {
-    const layer = layoutLayer(PL, PW, a, b);
-    const byH = layer.length * Math.floor(loadH / v);
-    const total = Math.min(byH, byKg);
-    const layers = total ? Math.ceil(total / layer.length) : 0;
-    const c = { a, b, v, layer, total, layers, loadHeight: layers * v, limit: byKg < byH ? 'tải trọng' : 'chiều cao' };
-    if (!best || c.total > best.total || (c.total === best.total && c.loadHeight < best.loadHeight)) best = c;
+    // ponytail: overhang tried in 5 mm steps down to none; edge cartons hanging further than the support rule allows fail verify
+    for (let o = s.overhang || 0; o >= 0; o = o > 0 && o < 5 ? 0 : o - 5) {
+      const layer = centred(s, a, b, o);
+      const byH = layer.length * Math.floor(loadH / v);
+      const total = Math.min(byH, byKg);
+      const layers = total ? Math.ceil(total / layer.length) : 0;
+      const c = { a, b, v, layer, total, layers, loadHeight: layers * v, limit: byKg < byH ? 'tải trọng' : 'chiều cao', overhangUsed: o };
+      if (!better(c, best)) break; // less overhang never fits more
+      // three layers hold every support relation the stack has (odd on even, even on odd, the deck)
+      c.flip = (s.interlock ? ['x', 'y', 'xy', ''] : ['']).find(fl => verify(stack(s, layer, v, fl, Math.min(total, 3 * layer.length)), s).ok);
+      if (c.flip !== undefined) { best = c; break; }
+    }
   }
   const { layer, v } = best;
-  // centre the pattern on the pallet
-  const dx = (PL - Math.max(0, ...layer.map(p => p.x + p.l))) / 2 - o;
-  const dy = (PW - Math.max(0, ...layer.map(p => p.y + p.w))) / 2 - o;
-  const boxes = [];
-  for (let k = 0; boxes.length < best.total; k++)
-    for (const p of layer) {
-      if (boxes.length >= best.total) break;
-      const x = p.x + dx;
-      // interlock: mirror odd layers across the pallet centre
-      boxes.push({ id: boxes.length, x: s.interlock && k % 2 ? s.L - x - p.l : x, y: p.y + dy, z: k * v, l: p.l, w: p.w, h: v });
-    }
+  const boxes = stack(s, layer, v, best.flip, best.total);
   return {
     ...best, layer: undefined, boxes,
+    interlockDropped: !!s.interlock && !best.flip && best.layers > 1,
     perLayer: layer.length,
     totalHeight: best.loadHeight + s.palletH,
     weight: best.total * s.kg,
     areaUtil: (layer.length * best.a * best.b) / (s.L * s.W),
     volUtil: best.loadHeight ? (best.total * s.l * s.w * s.h) / (s.L * s.W * best.loadHeight) : 0,
   };
+}
+
+// The overlap of b's base with c's footprint as [x0, y0, x1, y1], or null when they barely touch.
+function clip(b, c) {
+  const x0 = Math.max(b.x, c.x), x1 = Math.min(b.x + b.l, c.x + c.l), y0 = Math.max(b.y, c.y), y1 = Math.min(b.y + b.w, c.y + c.w);
+  return x1 - x0 > EPS && y1 - y0 > EPS ? [x0, y0, x1, y1] : null;
+}
+
+// Is the point over the convex hull of the contact patches? (A carton balances on the hull of what it touches.)
+// ponytail: each carton's own centre only; the weight stacked on it can shift that, add a load-path pass if towers matter.
+function inHull(px, py, rects) {
+  if (!rects.length) return false;
+  const pts = rects.flatMap(([x0, y0, x1, y1]) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = list => {
+    const h = [];
+    for (const p of list) { while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], p) <= 0) h.pop(); h.push(p); }
+    h.pop();
+    return h;
+  };
+  const hull = [...half(pts), ...half([...pts].reverse())];
+  return hull.every((a, i) => cross(a, hull[(i + 1) % hull.length], [px, py]) >= -1e-6); // on the edge still balances
+}
+
+// The pallet as a solid block under the deck, for cartons moved by hand.
+const palletBlock = s => ({ x: 0, y: 0, z: -s.palletH, l: s.L, w: s.W, h: s.palletH });
+
+// Move b towards `to` one axis at a time, stopping flush against whatever is in the way (other cartons, the pallet,
+// the floor), the way a carton pushed by hand does. It never passes through anything, so an edit can't overlap.
+export function slide(b, to, others, s) {
+  const solids = [...others, palletBlock(s)];
+  for (const [k, n, a, an, c, cn] of [['x', 'l', 'y', 'w', 'z', 'h'], ['y', 'w', 'x', 'l', 'z', 'h'], ['z', 'h', 'x', 'l', 'y', 'w']]) {
+    let d = to[k] - b[k];
+    for (const o of solids) {
+      if (ov(b[a], b[a] + b[an], o[a], o[a] + o[an]) <= EPS || ov(b[c], b[c] + b[cn], o[c], o[c] + o[cn]) <= EPS) continue;
+      if (d > 0 && o[k] >= b[k] + b[n] - EPS) d = Math.min(d, o[k] - (b[k] + b[n]));
+      if (d < 0 && o[k] + o[n] <= b[k] + EPS) d = Math.max(d, o[k] + o[n] - b[k]);
+    }
+    if (k === 'z') d = Math.max(d, -s.palletH - b.z); // the floor
+    b[k] += d;
+  }
+}
+
+// Does b sit somewhere free: not inside another carton or the pallet, not under the floor?
+export function fits(b, others, s) {
+  return b.z >= -s.palletH - EPS && [...others, palletBlock(s)].every(c =>
+    ov(b.x, b.x + b.l, c.x, c.x + c.l) <= EPS || ov(b.y, b.y + b.w, c.y, c.y + c.w) <= EPS || ov(b.z, b.z + b.h, c.z, c.z + c.h) <= EPS);
 }
 
 // Checks real geometry, independent of how the boxes were produced.
@@ -115,12 +180,13 @@ export function verify(boxes, s) {
       if (ov(b.x, b.x + b.l, c.x, c.x + c.l) > EPS && ov(b.y, b.y + b.w, c.y, c.y + c.w) > EPS &&
           ov(b.z, b.z + b.h, c.z, c.z + c.h) > EPS) collisions.push([i, j]);
     }
-    let area = 0;
-    if (Math.abs(b.z) < EPS) area = ov(b.x, b.x + b.l, 0, s.L) * ov(b.y, b.y + b.w, 0, s.W);
-    else for (const c of boxes)
-      if (c !== b && Math.abs(c.z + c.h - b.z) < EPS) area += ov(b.x, b.x + b.l, c.x, c.x + c.l) * ov(b.y, b.y + b.w, c.y, c.y + c.w);
-    const ratio = area / (b.l * b.w);
-    if (ratio < minSup - 1e-9) unsupported.push({ i, ratio });
+    // where the base really rests: the deck, or the tops of the cartons right under it
+    const under = Math.abs(b.z) < EPS ? [{ x: 0, y: 0, l: s.L, w: s.W }] : boxes.filter(c => c !== b && Math.abs(c.z + c.h - b.z) < EPS);
+    const patches = under.map(c => clip(b, c)).filter(Boolean);
+    const ratio = patches.reduce((t, [x0, y0, x1, y1]) => t + (x1 - x0) * (y1 - y0), 0) / (b.l * b.w);
+    // it falls when nothing holds it or its centre is past the edge of what does, whatever the area rule says
+    const tips = !inHull(b.x + b.l / 2, b.y + b.w / 2, patches);
+    if (ratio < minSup - 1e-9 || tips) unsupported.push({ i, ratio, tips });
   });
   const status = boxes.map(() => null);
   for (const { i } of unsupported) status[i] = 'unsupported';
@@ -190,10 +256,9 @@ export function snapToFaces(b, others, s, reach = 15) {
 }
 
 // Gravity: lowest z the box falls to from where it is now.
-export function dropZ(boxes, b) {
-  let z = 0;
-  for (const c of boxes)
-    if (c !== b && c.z + c.h <= b.z + EPS &&
-        ov(b.x, b.x + b.l, c.x, c.x + c.l) > EPS && ov(b.y, b.y + b.w, c.y, c.y + c.w) > EPS) z = Math.max(z, c.z + c.h);
-  return z;
+// Off the pallet it falls to the floor, not to deck height.
+export function dropZ(boxes, b, s) {
+  const fall = { ...b };
+  slide(fall, { ...b, z: -Infinity }, boxes.filter(c => c !== b), s);
+  return fall.z;
 }

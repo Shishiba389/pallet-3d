@@ -1,6 +1,6 @@
 // node engine.test.mjs
 import assert from 'node:assert/strict';
-import { layoutLayer, optimize, verify, dropZ, reconcile, snapToFaces } from './engine.js';
+import { layoutLayer, optimize, verify, dropZ, reconcile, snapToFaces, slide, fits } from './engine.js';
 
 // guillotine 2-block beats the plain grid (9) on 1200×1000; Euro pallet is an exact fit
 assert.equal(layoutLayer(1200, 1000, 400, 300).length, 10);
@@ -22,6 +22,21 @@ const rt = optimize(tip);
 assert.equal(rt.total, 64); // 300×250 footprint, 400 tall: 16 × 4
 assert.ok(verify(rt.boxes, tip).ok);
 
+// every plan the engine reports passes its own geometry check: overhang is cut back and interlock
+// dropped when they would leave cartons hanging or balanced on a gap
+let plans = 0;
+for (const [L, W] of [[1200, 800], [1200, 1000], [1100, 1100]])
+  for (let l = 150; l <= 600; l += 75) for (let w = 120; w <= l; w += 70)
+    for (const interlock of [true, false]) for (const overhang of [0, 30]) {
+      const sp = { ...spec, L, W, l, w, interlock, overhang, maxKg: 0 };
+      const p = optimize(sp);
+      assert.ok(verify(p.boxes, sp).ok, JSON.stringify({ L, W, l, w, interlock, overhang }));
+      plans++;
+    }
+assert.ok(plans > 300);
+const edge = optimize({ ...spec, L: 1200, W: 800, l: 150, w: 120, overhang: 30 });
+assert.ok(edge.overhangUsed < 30 && verify(edge.boxes, { ...spec, L: 1200, W: 800, l: 150, w: 120, overhang: 30 }).ok);
+
 // geometry catches what the engine never produces
 const b = (x, y, z, h = 250) => ({ x, y, z, l: 400, w: 300, h });
 const bad = verify([b(0, 0, 0), b(100, 0, 0), b(800, 700, 600), b(1000, 0, 0), b(0, 600, 0, 300)], spec);
@@ -30,7 +45,24 @@ assert.deepEqual(bad.status, ['collision', 'collision', 'unsupported', 'outside'
 assert.equal(bad.ok, false);
 
 const stack = [b(0, 0, 0), b(0, 0, 900)];
-assert.equal(dropZ(stack, stack[1]), 250);
+assert.equal(dropZ(stack, stack[1], spec), 250);
+
+// stability: a carton whose centre is past the edge of what holds it falls, whatever the area rule says
+const loose = { ...spec, minSupport: 0 };
+assert.equal(verify([b(0, 0, 0), b(150, 0, 250)], loose).status[1], null); // centre at 350, over the carton below
+assert.equal(verify([b(0, 0, 0), b(250, 0, 250)], loose).status[1], 'unsupported'); // centre at 450, past its edge at 400
+assert.equal(verify([b(0, 0, 600)], loose).status[0], 'unsupported'); // floating
+
+// by hand: a carton stops flush against the next one, never enters the pallet, and off the pallet falls to the floor
+const wall = b(0, 0, 0), mover = b(600, 0, 0);
+slide(mover, { x: 100, y: 0, z: 0 }, [wall], spec);
+assert.equal(mover.x, 400);
+slide(mover, { x: 400, y: 0, z: -200 }, [wall], spec);
+assert.equal(mover.z, 0);
+const off = b(1300, 0, 0);
+assert.equal(dropZ([off], off, spec), -spec.palletH);
+assert.equal(fits(b(200, 0, 0), [wall], spec), false);
+assert.equal(fits(b(400, 0, 0), [wall], spec), true);
 
 // tolerance is 0.01 mm: touching faces are fine, a 0.1 mm overlap is a collision
 assert.equal(verify([b(0, 0, 0), b(400, 0, 0)], spec).collisions.length, 0);

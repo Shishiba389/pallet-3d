@@ -168,6 +168,10 @@
   #views { bottom: 12px; left: 12px }
   #layers { bottom: 12px; right: 12px; gap: 10px; padding: 4px 16px; min-height: 44px }
   #layers input { width: 120px; accent-color: var(--ink-dark) }
+  #layers { padding-left: 4px }
+  #layers .sep { width: 1px; height: 20px; background: var(--line) }
+  #toast { top: 64px; left: 12px; max-width: calc(100% - 24px); padding: 8px 16px; color: var(--text-2) }
+  @container (max-width: 520px) { #play span { display: none } }
 
   @media (max-width: 1180px) {
     .strip { grid-template-columns: repeat(3, 1fr); row-gap: 16px }
@@ -267,7 +271,7 @@
         </div>
         <label><span data-i18n="minSupport">Diện tích đỡ tối thiểu</span> <i>%</i><input name="minSupport" type="number" inputmode="numeric" min="0" max="100" value="80" required></label>
         <label class="check"><input name="interlock" type="checkbox" checked> <span data-i18n="interlock">Xếp xen kẽ lớp</span></label>
-        <label class="check"><input id="gravity" type="checkbox" checked> <span data-i18n="gravity">Thùng tự rơi khi thả</span></label>
+        <label class="check"><input id="physics" type="checkbox" checked> <span data-i18n="physics">Vật lý thật: thùng không xuyên qua nhau, tự rơi khi thả</span></label>
         <label class="check"><input id="snap" type="checkbox" checked> <span data-i18n="snap">Bắt dính vào mặt thùng khi kéo</span></label>
       </div>
     </details>
@@ -313,7 +317,14 @@
       <button class="tool" data-view="top" aria-pressed="false" title="Nhìn từ trên xuống" data-i18n="top" data-i18n-title="topT">Trên</button>
       <button class="tool" data-view="front" aria-pressed="false" title="Nhìn mặt trước" data-i18n="front" data-i18n-title="frontT">Trước</button>
     </div>
-    <label class="ov" id="layers"><span data-i18n="layers">Lớp</span> <input id="cut" type="range" min="1" max="1" value="1"><output id="cutv" class="num"></output></label>
+    <div class="ov" id="toast" role="status" hidden></div>
+    <div class="ov" id="layers">
+      <button class="tool" id="play" title="Xem xếp từng thùng theo thứ tự: từng lớp, hàng sau trước" data-i18n-title="playT" aria-label="Mô phỏng xếp" data-i18n-aria="play">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg><span id="play-label" class="num" data-i18n="play">Mô phỏng xếp</span>
+      </button>
+      <span class="sep"></span>
+      <label for="cut" data-i18n="layers">Lớp</label><input id="cut" type="range" min="1" max="1" value="1"><output id="cutv" class="num"></output>
+    </div>
   </div>
 </main>
 </body>

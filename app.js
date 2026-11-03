@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { optimize, verify, dropZ, reconcile, snapToFaces } from './engine.js';
+import { optimize, verify, dropZ, reconcile, snapToFaces, slide, fits } from './engine.js';
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 const $ = id => document.getElementById(id);
@@ -16,7 +16,7 @@ const WORDS = {
     weight: 'Khối lượng', allowTip: 'Cho phép đặt nằm', pallet: 'Pallet', palletType: 'Loại pallet', custom: 'Tùy chỉnh',
     maxH: 'Cao tối đa', maxKg: 'Tải tối đa', limitsHint: 'Chiều cao tính cả pallet. Tải 0 là không giới hạn.', advanced: 'Nâng cao',
     palletH: 'Cao pallet', overhang: 'Tràn mép', minSupport: 'Diện tích đỡ tối thiểu', interlock: 'Xếp xen kẽ lớp',
-    gravity: 'Thùng tự rơi khi thả', snap: 'Bắt dính vào mặt thùng khi kéo', keys: 'Phím tắt', kRotate: 'Xoay thùng đang chọn',
+    physics: 'Vật lý thật: thùng không xuyên qua nhau, tự rơi khi thả', snap: 'Bắt dính vào mặt thùng khi kéo', keys: 'Phím tắt', kRotate: 'Xoay thùng đang chọn',
     kTip: 'Lật thùng', kDrop: 'Thả xuống mặt đỡ', kAdd: 'Thêm thùng', kDel: 'Xóa thùng', kEsc: 'Bỏ chọn',
     dragKey: 'Kéo chuột', dragDo: 'Xoay góc nhìn', rightKey: 'Chuột phải', rightDo: 'Dời góc nhìn', wheelKey: 'Con lăn',
     wheelDo: 'Phóng to, thu nhỏ', cartons: 'Số thùng', height: 'Chiều cao', fill: 'Lấp đầy', byVolume: 'theo thể tích',
@@ -31,20 +31,24 @@ const WORDS = {
     byH: 'Giới hạn bởi chiều cao: còn {left} mm, chưa đủ cho một lớp nữa ({v} mm).',
     handEdited: 'đã chỉnh sửa thủ công', perLayer: '{p} / lớp × {f} lớp', onSide: ' · đặt nằm',
     check: 'Kiểm chứng hình học:', findTitle: 'Chọn lần lượt các thùng {kind}', findHint: 'nhấp để tìm thùng lỗi',
-    checkOk: 'Kiểm chứng hình học: không va chạm, nằm trong giới hạn, mỗi thùng được đỡ ≥ {sup} % đáy. Trọng tâm lệch {cog} mm so với tâm pallet.',
+    checkOk: 'Kiểm chứng hình học: không va chạm, nằm trong giới hạn, mỗi thùng được đỡ ≥ {sup} % đáy và đứng vững. Trọng tâm lệch {cog} mm so với tâm pallet.',
     faulty: '{n} thùng lỗi', valid: 'Hợp lệ', empty: 'Trống', needValue: 'cần nhập giá trị', atLeast: 'tối thiểu {v}', atMost: 'tối đa {v}',
     overPallet: 'phải lớn hơn chiều cao pallet', odd: 'Lớp lẻ', even: 'Lớp chẵn', each: 'Mỗi lớp', nBoxes: '{n} thùng',
     recon: 'Tính toán ↔ 3D:', reconOf: '{m}/{n} thùng trùng khớp', reconMoved: '{n} lệch', reconMissing: '{n} thiếu',
     reconExtra: '{n} thêm', reconDev: 'sai lệch lớn nhất {v} mm', reconTol: '(dung sai {v} mm)',
     colMetric: 'Chỉ số', colPlan: 'Tính toán', colBuilt: '3D đo được', colDiff: 'Sai lệch',
     rLoadH: 'Chiều cao hàng', rCog: 'Trọng tâm x; y; z', rBoxes: 'Vị trí từng thùng',
+    play: 'Mô phỏng xếp', playT: 'Xem xếp từng thùng theo thứ tự: từng lớp, hàng sau trước',
+    noRoom: 'Không đủ chỗ để xoay tại đây. Kéo thùng ra chỗ trống rồi xoay.',
+    colStack: 'Xếp thẳng cột vì xen kẽ sẽ làm thùng lớp trên thiếu đỡ.',
+    overCut: 'Tràn mép dùng {used} mm thay vì {max} mm để thùng ở mép được đỡ đủ.',
   },
   en: {
     title: 'Load plan', reset: 'Back to the computed plan', carton: 'Carton', len: 'Length', wid: 'Width', hei: 'Height',
     weight: 'Weight', allowTip: 'Allow laying on its side', pallet: 'Pallet', palletType: 'Pallet type', custom: 'Custom',
     maxH: 'Max height', maxKg: 'Max load', limitsHint: 'Height includes the pallet. A load of 0 means no limit.', advanced: 'Advanced',
     palletH: 'Pallet height', overhang: 'Overhang', minSupport: 'Minimum support', interlock: 'Interlock layers',
-    gravity: 'Cartons drop when released', snap: 'Snap to carton faces when dragging', keys: 'Shortcuts', kRotate: 'Rotate the selected carton',
+    physics: 'Real physics: cartons can’t pass through each other and drop when released', snap: 'Snap to carton faces when dragging', keys: 'Shortcuts', kRotate: 'Rotate the selected carton',
     kTip: 'Tip the carton over', kDrop: 'Drop onto what is below', kAdd: 'Add a carton', kDel: 'Delete the carton', kEsc: 'Deselect',
     dragKey: 'Drag', dragDo: 'Orbit the view', rightKey: 'Right drag', rightDo: 'Pan the view', wheelKey: 'Wheel',
     wheelDo: 'Zoom in and out', cartons: 'Cartons', height: 'Height', fill: 'Fill', byVolume: 'by volume',
@@ -59,13 +63,17 @@ const WORDS = {
     byH: 'Limited by height: {left} mm left, not enough for another layer ({v} mm).',
     handEdited: 'edited by hand', perLayer: '{p} per layer × {f} layers', onSide: ' · on its side',
     check: 'Geometry check:', findTitle: 'Select each carton in turn: {kind}', findHint: 'click to find the cartons',
-    checkOk: 'Geometry check: no collisions, within limits, every carton supported on at least {sup} % of its base. Centre of gravity {cog} mm from the pallet centre.',
+    checkOk: 'Geometry check: no collisions, within limits, every carton supported on at least {sup} % of its base and stable. Centre of gravity {cog} mm from the pallet centre.',
     faulty: '{n} at fault', valid: 'Valid', empty: 'Empty', needValue: 'enter a value', atLeast: 'at least {v}', atMost: 'at most {v}',
     overPallet: 'must be more than the pallet height', odd: 'Odd layers', even: 'Even layers', each: 'Each layer', nBoxes: '{n} cartons',
     recon: 'Plan ↔ 3D:', reconOf: '{m} of {n} cartons match', reconMoved: '{n} moved', reconMissing: '{n} missing',
     reconExtra: '{n} added', reconDev: 'largest deviation {v} mm', reconTol: '(tolerance {v} mm)',
     colMetric: 'Measure', colPlan: 'Computed', colBuilt: 'Measured in 3D', colDiff: 'Deviation',
     rLoadH: 'Load height', rCog: 'Centre of gravity x; y; z', rBoxes: 'Each carton’s position',
+    play: 'Play stacking', playT: 'Watch the cartons go on one by one: layer by layer, back row first',
+    noRoom: 'No room to turn it here. Drag it clear first, then turn it.',
+    colStack: 'Stacked in columns: interlocking would leave upper cartons short of support.',
+    overCut: 'Overhang {used} mm instead of {max} mm so the edge cartons stay supported.',
   },
 };
 let lang = 'vi';
@@ -88,13 +96,18 @@ const view = $('view');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); // 3x screens cost 2.25x the pixels for nothing visible
 view.prepend(renderer.domElement);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const css = name => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue(name).trim());
 const camera = new THREE.PerspectiveCamera(40, 1, 10, 60000);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f94, 2));
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-sun.position.set(-1, -2, 3);
-scene.add(sun);
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); // placed over the load in buildWorld
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 2;
+scene.add(sun, sun.target);
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 const tc = new TransformControls(camera, renderer.domElement);
@@ -130,6 +143,7 @@ function calc() {
   const s = readSpec();
   const reframe = !spec || ['L', 'W', 'maxH', 'palletH'].some(k => s[k] !== spec[k]);
   spec = s;
+  stopPlay();
   result = optimize(spec);
   edited = false;
   buildWorld();
@@ -144,7 +158,7 @@ function renderPlan() {
   const { boxes } = result, s = spec, o = s.overhang || 0, el = $('plan');
   const levels = [...new Set(boxes.map(b => b.z))].sort((a, b) => a - b);
   if (!levels.length) { el.innerHTML = '<span class="sub">—</span>'; return; }
-  const both = s.interlock && levels.length > 1;
+  const both = !!result.flip && levels.length > 1; // the engine may have dropped interlocking to keep cartons supported
   el.innerHTML = levels.slice(0, both ? 2 : 1).map((z, k) => {
     const layer = boxes.filter(b => b.z === z);
     const name = t(both ? (k ? 'even' : 'odd') : 'each'), count = t('nBoxes', { n: layer.length });
@@ -178,17 +192,38 @@ function slab(x, y, z, l, w, h, mat) {
   const m = new THREE.Mesh(unit, mat);
   m.position.set(x + l / 2, y + w / 2, z + h / 2);
   m.scale.set(l, w, h);
+  m.castShadow = m.receiveShadow = true;
   world.add(m);
+}
+
+// A block pallet as built: top deck boards with gaps, three cross boards, nine blocks, three bottom boards.
+function buildPallet(mat) {
+  const { L, W, palletH: P } = spec, t = 22;
+  if (P <= 0) return;
+  if (P < 4 * t) return slab(0, 0, -P, L, W, P, mat); // too thin for boards and blocks
+  const bw = Math.min(145, W / 6), bl = Math.min(145, L / 6), block = P - 3 * t;
+  const ys = [0, (W - bw) / 2, W - bw], xs = [0, (L - bl) / 2, L - bl];
+  for (let i = 0; i < 5; i++) slab(0, (i * (W - bw)) / 4, -t, L, bw, t, mat);
+  for (const x of xs) slab(x, 0, -2 * t, bl, W, t, mat);
+  for (const x of xs) for (const y of ys) slab(x, y, -2 * t - block, bl, bw, block, mat);
+  for (const y of ys) slab(0, y, -P, L, bw, t, mat);
 }
 
 function buildWorld() {
   select(null);
   world.clear(); // ponytail: per-box materials leak on recalc; dispose them if recalcs get into the thousands
   const { L, W, palletH, overhang: o, maxH } = spec, H = maxH - palletH;
-  const wood = new THREE.MeshStandardMaterial({ color: 0x9c7748, ...OFFSET });
-  const deck = Math.min(22, palletH);
-  slab(0, 0, -deck, L, W, deck, wood);
-  for (const y of [0, (W - 100) / 2, W - 100]) slab(0, y, -palletH, L, 100, palletH - deck, wood);
+  buildPallet(new THREE.MeshStandardMaterial({ color: 0x9c7748, ...OFFSET }));
+  // the sun over the load; its light camera covers the stack and the dark patch it casts on the floor
+  const d = Math.max(L, W, H), c = new THREE.Vector3(L / 2, W / 2, H / 2);
+  sun.target.position.copy(c);
+  sun.position.copy(c).addScaledVector(new THREE.Vector3(-1, -2, 3).normalize(), d * 2);
+  Object.assign(sun.shadow.camera, { left: -d * 1.5, right: d * 1.5, top: d * 1.5, bottom: -d * 1.5, near: 1, far: d * 5 });
+  sun.shadow.camera.updateProjectionMatrix();
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(d * 6, d * 6), new THREE.ShadowMaterial({ opacity: 0.16 }));
+  floor.position.set(L / 2, W / 2, -palletH - 0.5);
+  floor.receiveShadow = true;
+  world.add(floor);
   // the allowed load envelope
   env = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color: css('--text'), transparent: true, opacity: 0.3 }));
   env.position.set(L / 2, W / 2, H / 2);
@@ -200,6 +235,7 @@ function buildWorld() {
 
 function addMesh(box) {
   const m = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({ emissiveIntensity: 0.55, ...OFFSET }));
+  m.castShadow = m.receiveShadow = true;
   m.add(new THREE.LineSegments(unitEdges, edgeMat));
   m.userData.box = box;
   sync(m);
@@ -223,20 +259,60 @@ function setView(kind) {
 }
 
 function onMove() {
-  const m = tc.object, b = m.userData.box;
-  b.x = m.position.x - b.l / 2; b.y = m.position.y - b.w / 2; b.z = m.position.z - b.h / 2;
-  if ($('snap').checked) { snapToFaces(b, boxesOf().filter(c => c !== b), spec); sync(m); }
-  edited = true;
+  const m = tc.object, b = m.userData.box, others = boxesOf().filter(c => c !== b);
+  // where the hand wants it, snapped onto nearby faces; with physics it slides there and stops at whatever is in the way
+  const want = { ...b, x: m.position.x - b.l / 2, y: m.position.y - b.w / 2, z: m.position.z - b.h / 2 };
+  if ($('snap').checked) snapToFaces(want, others, spec);
+  if ($('physics').checked) slide(b, want, others, spec); else Object.assign(b, { x: want.x, y: want.y, z: want.z });
+  sync(m);
   refresh();
 }
 
 function onDragEnd() {
-  if ($('gravity').checked && selected) { drop(selected); refresh(); }
+  if ($('physics').checked && selected) { drop(selected); refresh(); }
 }
 
 function drop(m) {
-  m.userData.box.z = dropZ(boxesOf(), m.userData.box);
+  m.userData.box.z = dropZ(boxesOf(), m.userData.box, spec);
   sync(m);
+}
+
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { el.hidden = true; }, 3000);
+}
+
+// The loading sequence: cartons go on one at a time, layer by layer, back row first, each dropping into its slot.
+const STEP = 90, FALL = 400; // ms per carton, mm each one drops
+let play = null;
+function startPlay() {
+  if (!meshes.length) return;
+  select(null);
+  const order = [...meshes].sort((p, q) => {
+    const a = p.userData.box, b = q.userData.box;
+    return Math.round(a.z - b.z) || Math.round(b.y - a.y) || Math.round(a.x - b.x);
+  });
+  play = { order, t0: matchMedia('(prefers-reduced-motion: reduce)').matches ? -Infinity : performance.now() };
+}
+function stepPlay(now) {
+  const k = (now - play.t0) / STEP, n = play.order.length;
+  play.order.forEach((m, i) => {
+    sync(m);
+    m.visible = i < k;
+    const f = k - i; // 0..1 while this carton is falling into place
+    if (f > 0 && f < 1) m.position.z += FALL * (1 - f * f);
+  });
+  $('play-label').textContent = `${Math.min(n, Math.ceil(k))}/${n}`;
+  if (k >= n) { stopPlay(); refresh(); }
+}
+function stopPlay() {
+  if (!play) return;
+  play = null;
+  $('play-label').textContent = t('play');
+  meshes.forEach(sync); // every carton back exactly on the plan
 }
 
 function select(m) {
@@ -247,29 +323,33 @@ function select(m) {
 
 function edit(op) {
   if (!spec) return;
+  stopPlay();
   if (op === 'esc') return select(null);
   if (op === 'add') {
     const { L, W, l, w, h } = spec;
     const top = Math.max(0, ...boxesOf().map(b => b.z + b.h));
     const m = addMesh({ x: (L - l) / 2, y: (W - w) / 2, z: top, l, w, h });
     meshes.push(m);
-    edited = true;
     return select(m);
   }
   const m = selected;
   if (!m) return;
-  edited = true;
   if (op === 'del') {
     world.remove(m);
     m.material.dispose();
     meshes.splice(meshes.indexOf(m), 1);
     return select(null);
   }
-  const b = m.userData.box, cx = b.x + b.l / 2, cy = b.y + b.w / 2;
+  const b = m.userData.box, before = { ...b }, cx = b.x + b.l / 2, cy = b.y + b.w / 2;
   if (op === 'rz') [b.l, b.w] = [b.w, b.l];
   if (op === 'rx') [b.w, b.h] = [b.h, b.w]; // with Xoay this reaches all six orientations
   b.x = cx - b.l / 2; b.y = cy - b.w / 2; // turn in place around the vertical centre line
-  if (op === 'drop' || $('gravity').checked) drop(m); else sync(m);
+  const physics = $('physics').checked;
+  if (physics && op !== 'drop' && !fits(b, boxesOf().filter(c => c !== b), spec)) {
+    Object.assign(b, before); // a real carton can't turn into its neighbours
+    toast(t('noRoom'));
+  } else if (op === 'drop' || physics) drop(m);
+  sync(m);
   refresh();
 }
 
@@ -308,8 +388,11 @@ function finding(v) {
     return d ? t('editedMore', { d: `${d > 0 ? '+' : '−'}${Math.abs(d)}`, n: r.total }) : t('editedSame', { n: r.total });
   }
   if (!r.total) return t('none');
-  if (r.limit === 'tải trọng') return t('byKg', { kg: fmt(s.maxKg) });
-  return t('byH', { left: fmt(s.maxH - r.totalHeight), v: fmt(r.v) });
+  // what the engine had to give up so the stack stands
+  const gave = (r.interlockDropped ? ' ' + t('colStack') : '') +
+    (r.overhangUsed < (s.overhang || 0) ? ' ' + t('overCut', { used: fmt(r.overhangUsed), max: fmt(s.overhang) }) : '');
+  if (r.limit === 'tải trọng') return t('byKg', { kg: fmt(s.maxKg) }) + gave;
+  return t('byH', { left: fmt(s.maxH - r.totalHeight), v: fmt(r.v) }) + gave;
 }
 
 const fx = (x, d) => (+x).toLocaleString(lang === 'en' ? 'en-GB' : 'vi-VN', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -341,7 +424,9 @@ function refresh() {
   // verify and compare what is drawn, measured back out of the scene
   const bx = builtOf(), v = verify(bx, spec), r = result;
   lastV = v;
-  renderRecon(reconcile(r.boxes, bx, spec));
+  const rc = reconcile(r.boxes, bx, spec);
+  edited = !rc.exact; // edited means the 3D no longer matches the plan, measured, not "someone pressed a button"
+  renderRecon(rc);
 
   const levels = [...new Set(bx.map(b => Math.round(b.z)))].sort((a, b) => a - b);
   const cut = $('cut'), all = +cut.value >= +cut.max;
@@ -407,7 +492,12 @@ form.addEventListener('submit', e => e.preventDefault());
 $('reset').addEventListener('click', calc);
 $('tools').addEventListener('click', e => { const op = e.target.closest('[data-op]')?.dataset.op; if (op) edit(op); });
 $('views').addEventListener('click', e => { const k = e.target.closest('[data-view]')?.dataset.view; if (k) setView(k); });
-$('cut').addEventListener('input', () => spec && refresh());
+$('cut').addEventListener('input', () => { stopPlay(); if (spec) refresh(); });
+$('play').addEventListener('click', () => {
+  if (!play) return startPlay();
+  stopPlay();
+  refresh();
+});
 $('checks').addEventListener('click', e => { // cycle through the boxes with this fault
   const k = e.target.closest('[data-kind]')?.dataset.kind;
   if (!k) return;
@@ -429,6 +519,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   const r = renderer.domElement.getBoundingClientRect();
   ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ptr, camera);
+  stopPlay();
   select(ray.intersectObjects(meshes.filter(m => m.visible), false)[0]?.object ?? null);
 });
 
@@ -438,7 +529,7 @@ new ResizeObserver(() => {
   camera.updateProjectionMatrix();
   renderer.render(scene, camera); // setSize clears the buffer; redraw now so the view never flashes empty
 }).observe(view);
-renderer.setAnimationLoop(() => renderer.render(scene, camera));
+renderer.setAnimationLoop(now => { if (play) stepPlay(now); renderer.render(scene, camera); });
 // A.N.T switches its theme in the parent page; the change reaches this frame as a storage event.
 addEventListener('storage', e => {
   if (e.key === 'ant-language') return setLang();
